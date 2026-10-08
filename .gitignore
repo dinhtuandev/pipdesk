@@ -7,6 +7,8 @@ Thumbs.db
 node_modules/
 .vscode/
 .idea/
+__pycache__/
+*.pyc
 
 # Local agent/editor scratch state
 .orthex/
