@@ -28,7 +28,7 @@ tạo ra chúng.
 
 Mỗi ca ghi một trong ba trạng thái: **Đạt**, **Không**, **Không tái hiện**.
 Ghi chú bắt buộc khi kết quả không Đạt, kèm ảnh chụp hoặc dòng console nếu có.
-Tổng hợp vào bảng ở mục 12.
+Tổng hợp vào bảng ở mục 13.
 
 ## 3. Nhóm A — Popup và trạng thái
 
@@ -287,7 +287,7 @@ Tổng hợp vào bảng ở mục 12.
   lượng cho toast `Durations saved`; khi chạy nút đổi thành `Pause` và meta
   `Running`; hết phiên có toast `Focus session logged`, nhãn chuyển sang
   `Short break`, dòng `Today:` tăng thành `1 session · 1 min`.
-  Ghi nhận xem thông báo hệ thống có hiện hay không (xem mục 11).
+  Ghi nhận xem thông báo hệ thống có hiện hay không (xem mục 12).
 - Neo: `panels/timer.js` — `start()`, `finishSession()`, `paint()`,
   `renderHistory()`.
 
@@ -340,7 +340,7 @@ Tổng hợp vào bảng ở mục 12.
   console service worker.
 - Kỳ vọng: xuất hiện các khoá `notes__parts` và `notes__part_0`,
   `notes__part_1` (số khúc tuỳ độ dài). Ghi nhận thêm: khoá `notes` cũ còn hay
-  mất trong `chrome.storage.sync` (xem mục 11).
+  mất trong `chrome.storage.sync` (xem mục 12).
 - Neo: `shared/store.js` — `writeSync()` chia chuỗi theo `SYNC_ITEM_LIMIT = 8000`
   sau `JSON.stringify`, và `clearSyncParts()` chỉ xoá các khoá dạng
   `notes__part_*` / `notes__parts`.
@@ -384,7 +384,56 @@ Tổng hợp vào bảng ở mục 12.
 - Neo: `background/service-worker.js` — `handle()` chỉ trả lỗi cho message lạ;
   mọi luồng hợp lệ phải trả `{ ok: true }`.
 
-## 10. Lệnh kiểm tra bằng console
+## 10. Nhóm H — Quick PiP trên YouTube
+
+### TC-H1 — Nút xuất hiện trong thanh điều khiển
+- Thao tác: mở một trang xem video `https://www.youtube.com/watch?v=...`, đưa
+  chuột xuống thanh điều khiển của trình phát.
+- Kỳ vọng: nút PiPDesk nằm trong nhóm điều khiển bên phải, cạnh các nút của
+  YouTube, và có tooltip `PiPDesk: float this video`.
+- Neo: `content/youtube.js` — `mount()` chèn `#pipdesk-quick-pip` vào đầu
+  `.ytp-right-controls`; `manifest.json` khai báo `content_scripts` cho
+  `https://www.youtube.com/*`.
+
+### TC-H2 — Bấm nút là float ngay, không cần mở popup
+- Thao tác: bấm nút PiPDesk khi video đang phát.
+- Kỳ vọng: cửa sổ PiP của trình phát mở ra; popup của extension không mở.
+- Neo: `content/youtube.js` — `startPip()` gọi `video.requestPictureInPicture()`
+  ngay trong handler click, nên lời gọi giữ được user activation của trang.
+
+### TC-H3 — Chuột phải trên nút mở nhóm hành động
+- Thao tác: bấm chuột phải vào nút PiPDesk.
+- Kỳ vọng: menu PiPDesk hiện cạnh nút với bốn mục `Float this video`,
+  `Float this tab`, `Float a region`, `Stop PiP`; bấm ra ngoài hoặc `Esc` thì
+  menu đóng.
+- Neo: `content/youtube.js` — `openMenu()`, `ACTIONS`, `onOutside`, `onMenuKey`.
+
+### TC-H4 — Menu chuột phải của Chrome có mục PiPDesk
+- Thao tác: bấm chuột phải vào một vùng trống của trang.
+- Kỳ vọng: nhóm `PiPDesk` hiện trong menu của Chrome với ba mục con
+  `Float this tab`, `Float a region`, `Stop PiP`; chọn `Float this tab` thì PiP
+  toàn tab mở ra.
+- Neo: `background/service-worker.js` — `buildContextMenu()` tạo nhóm
+  `pipdesk-menu`; `chrome.contextMenus.onClicked` gọi `startFullTabPip()`,
+  `startRegionSelection()`, `stopPip()`.
+- Lưu ý: menu của Chrome cố ý **không** có mục float video, vì cú bấm ở menu
+  không mang activation cho trang; việc đó chỉ nút trên trang làm được.
+
+### TC-H5 — Điều hướng trong YouTube không nhân đôi nút
+- Thao tác: từ một video bấm sang video khác (YouTube không nạp lại trang), rồi
+  đếm số nút bằng `document.querySelectorAll("#pipdesk-quick-pip").length`.
+- Kỳ vọng: luôn bằng `1`.
+- Neo: `content/youtube.js` — `mount()` thoát khi nút đã tồn tại,
+  `scheduleMount()` chỉ hẹn lại lúc nút vắng mặt, và có nghe
+  `yt-navigate-finish`.
+
+### TC-H6 — Trang không phải YouTube thì không có nút
+- Thao tác: mở một trang bất kỳ khác YouTube.
+- Kỳ vọng: không nút PiPDesk nào được chèn; `content/youtube.js` chỉ chạy trên
+  `https://www.youtube.com/*`.
+- Neo: `manifest.json` — `content_scripts[0].matches`.
+
+## 11. Lệnh kiểm tra bằng console
 
 Console service worker (`chrome://extensions` → service worker):
 
@@ -413,7 +462,7 @@ Console của offscreen document (`chrome://extensions` → Inspect views
 document.pictureInPictureElement;
 ```
 
-## 11. Hành vi đã ghi nhận (theo mã, cần xác nhận khi chạy)
+## 12. Hành vi đã ghi nhận (theo mã, cần xác nhận khi chạy)
 
 Hai điểm đầu dưới đây suy ra từ mã nguồn, chưa chạy thực tế; điểm 3 lấy từ log
 thật trên YouTube. TC-F2, TC-E6 và TC-D1 là nơi ghi lại kết quả.
@@ -436,7 +485,7 @@ nút `Cancel` và việc đổi kích thước cửa sổ gửi `selection-cance
 TC-C5), và đóng PiP video luôn gửi `pip-exited` (TC-D3). Riêng `Stop PiP` vẫn
 không đóng cửa sổ PiP gốc của trang (TC-D4).
 
-## 12. Bảng ghi kết quả
+## 13. Bảng ghi kết quả
 
 | Mã ca | Kết quả | Ghi chú |
 | --- | --- | --- |
@@ -477,3 +526,9 @@ không đóng cửa sổ PiP gốc của trang (TC-D4).
 | TC-G2 |  |  |
 | TC-G3 |  |  |
 | TC-G4 |  |  |
+| TC-H1 |  |  |
+| TC-H2 |  |  |
+| TC-H3 |  |  |
+| TC-H4 |  |  |
+| TC-H5 |  |  |
+| TC-H6 |  |  |
