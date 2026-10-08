@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "PiPDesk \u2014 Picture-in-Picture Workspace",
+  "version": "0.1.0",
+  "description": "Keep a tab, a page region, your notes, your to-dos or a focus timer floating on top of whatever you are working on.",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "PiPDesk",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "permissions": [
+    "activeTab",
+    "tabCapture",
+    "offscreen",
+    "scripting",
+    "storage",
+    "alarms",
+    "notifications"
+  ],
+  "web_accessible_resources": [
+    {
+      "matches": ["<all_urls>"],
+      "use_dynamic_url": true,
+      "resources": [
+        "panels/notes.html",
+        "panels/todos.html",
+        "panels/timer.html"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>PiPDesk capture</title>
+  </head>
+  <body>
+    <!-- Invisible working surface: the tab stream is decoded here, cropped on a
+         canvas when a region is selected, and each video is promoted to a
+         picture-in-picture window on demand. -->
+    <video id="source-video" playsinline muted></video>
+    <canvas id="crop-canvas"></canvas>
+    <video id="crop-video" playsinline muted></video>
+    <script src="offscreen.js"></script>
+  </body>
+</html>

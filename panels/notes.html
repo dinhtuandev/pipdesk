@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Notes · PiPDesk</title>
+    <link rel="stylesheet" href="../shared/tokens.css" />
+    <link rel="stylesheet" href="../shared/panel.css" />
+    <style>
+      .stack { display: flex; flex-direction: column; gap: var(--sp-2); }
+      .item__main {
+        flex: 1; min-width: 0; display: block; text-align: left;
+        padding: 0; border: none; background: none; color: inherit; cursor: pointer;
+      }
+      .item__main:hover .item__text { color: var(--accent-text); }
+      .confirm { font-size: var(--fs-sm); color: var(--warning); }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <div class="panel">
+      <div class="panel__head">
+        <div class="panel__title">Notes</div>
+        <div class="panel__meta" id="notes-count">0 notes</div>
+      </div>
+
+      <div class="panel__body" id="notes-body">
+        <div id="notes-list" class="stack">
+          <div class="row">
+            <input id="notes-search" class="field" type="search" placeholder="Search notes" aria-label="Search notes" autocomplete="off" />
+            <button id="notes-new" class="btn" type="button">New</button>
+          </div>
+          <div id="notes-items" class="stack"></div>
+        </div>
+
+        <div id="notes-editor" class="stack" hidden>
+          <label class="sr-only" for="notes-text">Note text</label>
+          <textarea id="notes-text" class="field field--area" placeholder="Write a note…"></textarea>
+          <div id="notes-actions" class="row"></div>
+        </div>
+      </div>
+
+      <div class="panel__footer">
+        <div id="panel-nav"></div>
+      </div>
+    </div>
+
+    <script src="../shared/store.js"></script>
+    <script src="../shared/panel.js"></script>
+    <script src="notes.js"></script>
+  </body>
+</html>

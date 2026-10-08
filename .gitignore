@@ -1,0 +1,19 @@
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+*.log
+
+# Tooling
+node_modules/
+.vscode/
+.idea/
+
+# Local agent/editor scratch state
+.orthex/
+**/.orthex/
+
+# Local build output
+dist/
+*.zip
+*.crx
+*.pem

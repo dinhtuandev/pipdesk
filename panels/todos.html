@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Todos · PiPDesk</title>
+    <link rel="stylesheet" href="../shared/tokens.css" />
+    <link rel="stylesheet" href="../shared/panel.css" />
+    <style>
+      .stack { display: flex; flex-direction: column; gap: var(--sp-2); }
+      .section {
+        margin: var(--sp-2) 0 0; font-size: var(--fs-xs); font-weight: 600;
+        letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted);
+      }
+      .item__main {
+        flex: 1; min-width: 0; display: block; text-align: left;
+        padding: 0; border: none; background: none; color: inherit; cursor: pointer;
+      }
+      .item--done .todo__text { color: var(--text-muted); text-decoration: line-through; }
+      .check { flex: none; width: 16px; height: 16px; margin-top: 2px; accent-color: var(--accent); }
+      .due { font-size: var(--fs-xs); }
+      .due--today { color: var(--warning); }
+      .due--past { color: var(--danger); }
+      .edit { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <div class="panel">
+      <div class="panel__head">
+        <div class="panel__title">Todos</div>
+        <div class="panel__meta" id="todos-meta">0 active</div>
+      </div>
+
+      <div class="panel__body" id="todos-body">
+        <div class="row">
+          <input id="todo-input" class="field" type="text" placeholder="Add a todo" aria-label="New todo" autocomplete="off" />
+          <button id="todo-add" class="btn" type="button">Add</button>
+        </div>
+        <div class="section" id="todos-active-title">Active</div>
+        <div class="stack" id="todos-active"></div>
+        <div class="section" id="todos-done-title">Done</div>
+        <div class="stack" id="todos-done"></div>
+      </div>
+
+      <div class="panel__footer">
+        <div id="panel-nav"></div>
+      </div>
+    </div>
+
+    <script src="../shared/store.js"></script>
+    <script src="../shared/panel.js"></script>
+    <script src="todos.js"></script>
+  </body>
+</html>

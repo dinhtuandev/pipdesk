@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Focus · PiPDesk</title>
+    <link rel="stylesheet" href="../shared/tokens.css" />
+    <link rel="stylesheet" href="../shared/panel.css" />
+    <style>
+      .stack { display: flex; flex-direction: column; gap: var(--sp-2); }
+      .clock {
+        display: flex; flex-direction: column; align-items: center;
+        gap: var(--sp-1); padding: var(--sp-4) 0 var(--sp-2);
+      }
+      .clock__time {
+        font-family: var(--font-mono); font-size: 42px; font-weight: 600;
+        letter-spacing: 0.02em; line-height: 1;
+      }
+      .clock__mode { font-size: var(--fs-sm); color: var(--text-dim); }
+      .stat { font-size: var(--fs-sm); color: var(--text-dim); }
+      .section {
+        margin: var(--sp-2) 0 0; font-size: var(--fs-xs); font-weight: 600;
+        letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted);
+      }
+      .log { font-size: var(--fs-sm); color: var(--text-dim); }
+      .log__value { color: var(--text); }
+      label.field-label { font-size: var(--fs-xs); color: var(--text-dim); }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <div class="panel">
+      <div class="panel__head">
+        <div class="panel__title">Focus</div>
+        <div class="panel__meta" id="timer-meta">Ready</div>
+      </div>
+
+      <div class="panel__body" id="timer-body">
+        <div id="timer-view" class="stack">
+          <div class="clock">
+            <div class="clock__time" id="timer-clock" role="timer" aria-live="off">25:00</div>
+            <div class="clock__mode" id="timer-mode">Work</div>
+          </div>
+
+          <div class="row">
+            <button id="timer-start" class="btn btn--primary btn--block" type="button">Start</button>
+            <button id="timer-reset" class="btn" type="button">Reset</button>
+            <button id="timer-settings" class="btn btn--ghost" type="button">Durations</button>
+          </div>
+
+          <div class="stat">Today: <span id="timer-today">0 sessions · 0 min</span></div>
+
+          <div class="section">Last 7 days</div>
+          <div class="stack" id="timer-history"></div>
+        </div>
+
+        <div id="timer-settings-view" class="stack" hidden>
+          <label class="field-label" for="timer-work">Work (minutes)</label>
+          <input id="timer-work" class="field" type="number" min="1" max="180" inputmode="numeric" />
+
+          <label class="field-label" for="timer-short">Short break (minutes)</label>
+          <input id="timer-short" class="field" type="number" min="1" max="180" inputmode="numeric" />
+
+          <label class="field-label" for="timer-long">Long break (minutes)</label>
+          <input id="timer-long" class="field" type="number" min="1" max="180" inputmode="numeric" />
+
+          <div class="row">
+            <button id="timer-save" class="btn btn--primary" type="button">Save</button>
+            <button id="timer-cancel" class="btn" type="button">Back</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel__footer">
+        <div id="panel-nav"></div>
+      </div>
+    </div>
+
+    <script src="../shared/store.js"></script>
+    <script src="../shared/panel.js"></script>
+    <script src="timer.js"></script>
+  </body>
+</html>

@@ -1,0 +1,54 @@
+# AGENTS.md
+
+Working notes for anyone (human or agent) making changes in this repository.
+
+## What this is
+
+An unpacked Chrome MV3 extension. No build step, no bundler, no dependencies,
+no package manager. Edit a file, reload the extension at `chrome://extensions`,
+reload the tab you are testing.
+
+## Layout
+
+- `background/service-worker.js` — the only stateful authority. Owns capture
+  state, the offscreen document lifecycle, panel windows and the timer alarm.
+- `offscreen/` — `chrome.tabCapture` stream decoding, region cropping, and
+  promotion of a video element into picture-in-picture.
+- `content/content.js` — injected on demand by the service worker. Region
+  selection overlay plus native video PiP. Never declared in the manifest.
+- `popup/` — the toolbar popup. Sends messages, renders returned state.
+- `panels/` — notes, todos and timer. These run as extension pages inside a
+  document picture-in-picture window.
+- `shared/` — tokens, panel styles, `Store`, and `Panel` helpers. Loaded as
+  plain scripts; globals `Store` and `Panel`.
+
+## Conventions
+
+- Plain ES2020, no modules, no frameworks. Each panel script stays under ~200
+  lines.
+- Never hardcode a colour outside `shared/tokens.css`. `rgba()` scrims inside
+  the injected content script are the one exception, because that script cannot
+  load the token stylesheet.
+- Never pass user text to `innerHTML` without `Panel.escapeHtml`. Prefer
+  `textContent`.
+- Storage goes through `Store`. `chrome.storage.local` is written first; sync is
+  a mirror, never the primary.
+- Day keys come from `Panel.localDateKey()`. Do not use `toISOString()` for a
+  calendar day.
+- Timers and listeners must be cleared on pause, reset and unload.
+- Anything added to the manifest requires a reason: permissions here are
+  intentionally narrow (`activeTab`, `tabCapture`, `offscreen`, `scripting`,
+  `storage`, `alarms`, `notifications`). There are no host permissions and only
+  three web-accessible files.
+
+## Checks before you commit
+
+```bash
+for f in $(find . -name '*.js' -not -path './node_modules/*'); do node --check "$f" || exit 1; done
+node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8'))"
+python tools/make-icons.py   # only when the icon artwork changes
+```
+
+Then confirm by hand: load the folder unpacked, click each capture mode on a
+normal page, open each panel, and confirm no message reaches the service worker
+that it cannot answer (`Unsupported message:` in the console).
