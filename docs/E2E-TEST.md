@@ -28,7 +28,7 @@ tạo ra chúng.
 
 Mỗi ca ghi một trong ba trạng thái: **Đạt**, **Không**, **Không tái hiện**.
 Ghi chú bắt buộc khi kết quả không Đạt, kèm ảnh chụp hoặc dòng console nếu có.
-Tổng hợp vào bảng ở mục 13.
+Tổng hợp vào bảng ở mục 14.
 
 ## 3. Nhóm A — Popup và trạng thái
 
@@ -56,15 +56,15 @@ Tổng hợp vào bảng ở mục 13.
 - Kỳ vọng: nút có `hidden` và `disabled`; hint `Nothing is floating yet`.
 - Neo: `popup/popup.html` — `#stop`; `popup/popup.js` — `els.stop.hidden = !live`.
 
-### TC-A4 — Vòng đời stream khi mở và đóng popup
+### TC-A4 — Mở và đóng popup không dựng sẵn stream
 - Thao tác: mở popup trên tab thường, chờ khoảng một giây, rồi chạy
   `await chrome.runtime.getContexts({contextTypes:["OFFSCREEN_DOCUMENT"]})`
   trong console service worker; sau đó đóng popup và chạy lại lệnh.
-- Kỳ vọng: lần đầu trả về một phần tử (stream đã tạo sẵn), lần sau trả về mảng
-  rỗng. Nếu popup bị đóng trong khi PiP đang nổi thì stream vẫn còn nguyên.
-- Neo: `background/service-worker.js` — `chrome.runtime.onConnect` gọi
-  `ensureStream()`; nhánh `port.onDisconnect` chỉ dọn khi cả `state.capturing`
-  và `state.selecting` đều sai.
+- Kỳ vọng: cả hai lần đều trả về **mảng rỗng** — popup không còn xin stream
+  trước, vì mỗi nguồn tự xin stream riêng lúc được tạo. Nếu popup bị đóng trong
+  khi có nguồn đang nổi thì các nguồn vẫn còn nguyên.
+- Neo: `background/service-worker.js` — `onConnect` không còn warm-up; nhánh
+  `port.onDisconnect` chỉ dọn khi `selecting` sai và `listSources()` rỗng.
 
 ### TC-A5 — Đổi mode không tự chạy capture
 - Thao tác: trên trang có video, mở popup rồi bấm qua lại `Tab` và `Video`, sau
@@ -74,6 +74,25 @@ Tổng hợp vào bảng ở mục 13.
   message nào từ hai cú bấm đó.
 - Neo: `popup/popup.js` — `setPipMode()` chỉ sửa state cục bộ của popup và ghi
   `MODE_COPY`; message chỉ được dựng trong handler của nút `#cap-start`.
+
+### TC-A6 — Bật nút float cho site không phải YouTube
+- Thao tác: mở một trang thường có video HTML5 (không phải YouTube), mở popup,
+  bật hàng float cho site, cho phép quyền khi Chrome hỏi, rồi tải lại trang.
+- Kỳ vọng: hộp xin quyền chỉ nêu đúng origin của trang đó; sau khi cho phép và
+  tải lại, badge float hiện ở góc video; tắt hàng đó rồi tải lại thì badge biến
+  mất.
+- Neo: `manifest.json` — `optional_host_permissions`; `background/service-worker.js`
+  — nhánh `float-site-toggle` gọi `chrome.permissions.request` rồi
+  `registerFloatScript()`; `popup/popup.js` — hàng float lấy trạng thái qua
+  `float-site-status`.
+
+### TC-A7 — Site chưa cấp quyền thì không chèn script
+- Thao tác: ở một trang chưa bật quyền, mở popup và xem console của service
+  worker.
+- Kỳ vọng: không có badge float trên trang; popup hiện hàng float ở trạng thái
+  tắt; console không có lỗi kiểu `Cannot access contents of the page`.
+- Neo: `background/service-worker.js` — `syncFloatScripts()` / `floatSiteStatus()`
+  chỉ chèn khi `chrome.permissions.contains` trả `true`.
 
 ## 4. Nhóm B — Whole tab
 
@@ -95,9 +114,9 @@ Tổng hợp vào bảng ở mục 13.
 ### TC-B3 — Thoát bằng nút đóng của cửa sổ PiP
 - Thao tác: đóng cửa sổ PiP bằng nút `X` của chính nó, rồi mở lại popup.
 - Kỳ vọng: popup trở về trạng thái rảnh (`Stop PiP` ẩn, ba nút capture bật).
-- Neo: `offscreen/offscreen.js` — listener `leavepictureinpicture` gửi
-  `pip-exited`; `background/service-worker.js` — nhánh `pip-exited` đưa `state`
-  về `IDLE_STATE` và đóng offscreen.
+- Neo: `offscreen/offscreen.js` — `leavepictureinpicture` (khi cờ `closing` tắt)
+  gọi `stopAll()` rồi báo `pip-exited`; `background/service-worker.js` — nhánh
+  `pip-exited` xoá cờ `selecting`, đóng offscreen document và `broadcast()`.
 
 ### TC-B4 — Bấm Stop PiP
 - Thao tác: đang nổi PiP toàn tab, mở popup và bấm `Stop PiP`.
@@ -136,7 +155,7 @@ Tổng hợp vào bảng ở mục 13.
   `Stop PiP` ẩn.
 - Neo: `content/content.js` — `onKeyDown` gọi `teardown("cancel")`, hàm này gửi
   `selection-cancelled`; `background/service-worker.js` —
-  `cancelRegionSelection()` trả `state` về `IDLE_STATE` và broadcast.
+  `cancelRegionSelection()` đặt `selecting = false` rồi `broadcast()`.
 
 ### TC-C3 — Vùng nhỏ hơn ngưỡng không được chấp nhận
 - Thao tác: bấm `Selected region`, kéo một hộp khoảng 20 × 20 px, rồi nhấn
@@ -172,6 +191,33 @@ Tổng hợp vào bảng ở mục 13.
   `get-state`; tập `ACTION_MESSAGES` xoá nó khi một hành động mới bắt đầu;
   `popup/popup.js` — `DOMContentLoaded` đọc `response.error` rồi gọi
   `setNote(..., "error")`.
+
+### TC-C7 — Chọn vùng theo phần tử (một cú bấm)
+- Thao tác: mở chế độ chọn vùng, di chuột lần lượt qua một khối văn bản, một
+  ảnh và một khung video, rồi bấm một cái vào phần tử muốn cắt.
+- Kỳ vọng: khung nét đứt bám theo phần tử đang trỏ mà không cần kéo; cú bấm chốt
+  đúng khung đó; nút `Show in PiP` bấm được và cửa sổ PiP cắt đúng vùng vừa chốt.
+  Bấm vào phần tử khác thì vùng chọn đổi sang phần tử mới.
+- Neo: `content/content.js` — `elementAt()` tạm tắt `pointer-events` của lớp phủ
+  để `elementFromPoint` trả phần tử thật, `paintHover()` vẽ `ui.hover`, nhánh
+  `onPointerMove` khi chưa kéo, và nhánh `onPointerUp` chọn theo phần tử khi cạnh
+  kéo nhỏ hơn `MIN_SIDE`.
+
+### TC-C8 — Kéo tay vẫn giữ nguyên hành vi cũ
+- Thao tác: kéo một vùng lớn hơn ngưỡng nhỏ.
+- Kỳ vọng: khung vẽ theo con trỏ đúng như trước, không nhảy sang chế độ chọn
+  phần tử; payload gửi đi vẫn là `{ rect, viewport }`.
+- Neo: `content/content.js` — `onPointerUp` chỉ rẽ sang chọn phần tử khi cả hai
+  cạnh dưới `MIN_SIDE`.
+
+### TC-C9 — Tinh chỉnh vùng bằng bàn phím
+- Thao tác: sau khi chốt vùng, bấm các phím mũi tên; giữ `Ctrl` rồi bấm mũi tên;
+  cuối cùng bấm `Esc`.
+- Kỳ vọng: mũi tên dịch khung từng pixel, `Ctrl` + mũi tên đổi kích thước, khung
+  không vượt ra ngoài viewport; `Esc` xoá vùng chọn và nút `Show in PiP` trở về
+  trạng thái chờ.
+- Neo: `content/content.js` — `nudgeRect()` gọi trong `onKeyDown`;
+  `clearSelection()` xoá cả `hoverRect`.
 
 ## 6. Nhóm D — Video trên trang
 
@@ -287,7 +333,7 @@ Tổng hợp vào bảng ở mục 13.
   lượng cho toast `Durations saved`; khi chạy nút đổi thành `Pause` và meta
   `Running`; hết phiên có toast `Focus session logged`, nhãn chuyển sang
   `Short break`, dòng `Today:` tăng thành `1 session · 1 min`.
-  Ghi nhận xem thông báo hệ thống có hiện hay không (xem mục 12).
+  Ghi nhận xem thông báo hệ thống có hiện hay không (xem mục 13).
 - Neo: `panels/timer.js` — `start()`, `finishSession()`, `paint()`,
   `renderHistory()`.
 
@@ -340,7 +386,7 @@ Tổng hợp vào bảng ở mục 13.
   console service worker.
 - Kỳ vọng: xuất hiện các khoá `notes__parts` và `notes__part_0`,
   `notes__part_1` (số khúc tuỳ độ dài). Ghi nhận thêm: khoá `notes` cũ còn hay
-  mất trong `chrome.storage.sync` (xem mục 12).
+  mất trong `chrome.storage.sync` (xem mục 13).
 - Neo: `shared/store.js` — `writeSync()` chia chuỗi theo `SYNC_ITEM_LIMIT = 8000`
   sau `JSON.stringify`, và `clearSyncParts()` chỉ xoá các khoá dạng
   `notes__part_*` / `notes__parts`.
@@ -433,7 +479,63 @@ Tổng hợp vào bảng ở mục 13.
   `https://www.youtube.com/*`.
 - Neo: `manifest.json` — `content_scripts[0].matches`.
 
-## 11. Lệnh kiểm tra bằng console
+## 11. Nhóm I — nhiều nguồn nổi trong một cửa sổ
+
+Phép đo cổng đã chốt câu hỏi: bật một capture rồi tạo capture thứ hai thì cửa sổ
+mới thay chỗ cửa sổ cũ. Mỗi cây tài liệu chỉ nuôi được **một** cửa sổ PiP, nên
+nhiều cửa sổ rời là bất khả thi từ phía extension; hướng iframe bị bỏ và
+`offscreen/capture.html` đã xoá. Bộ ca dưới đây kiểm bản thay thế: nhiều nguồn
+cùng vẽ vào một canvas và cùng nổi trong một cửa sổ.
+
+### TC-I1 — Hai nguồn cùng nổi trong một cửa sổ
+- Thao tác: ở tab A bấm `Whole tab`, rồi sang tab B bấm `Selected region` và chọn
+  một vùng.
+- Kỳ vọng: chỉ có **một** cửa sổ PiP, bên trong chia hai ô cạnh nhau; popup liệt
+  kê hai dòng, dòng của A ghi `Whole tab`, dòng của B ghi `Selected region`.
+- Neo: `offscreen/offscreen.js` — `create-source` thêm nguồn vào registry và chỉ
+  gọi `requestPictureInPicture()` khi đây là nguồn đầu tiên; `slots()` xếp ô.
+
+### TC-I2 — Dừng một nguồn, cửa sổ vẫn sống
+- Thao tác: bấm nút `Stop` ở dòng của tab B.
+- Kỳ vọng: nguồn A giãn ra chiếm trọn khung, cửa sổ không đóng; popup còn một
+  dòng và nút `Stop all` tự ẩn.
+- Neo: `background/service-worker.js` — `stopPip(message.sourceId)` chỉ gỡ đúng
+  nguồn đó; `offscreen/offscreen.js` — `stop-source` vẽ lại lưới khi còn nguồn.
+
+### TC-I3 — Đóng cửa sổ bằng nút X
+- Thao tác: đóng cửa sổ PiP bằng nút X.
+- Kỳ vọng: popup trống danh sách, không còn chỉ báo chia sẻ tab.
+- Neo: `offscreen/offscreen.js` — `leavepictureinpicture` không thấy cờ `closing`
+  thì gọi `stopAll()` và báo `pip-exited`; worker nhận `pip-exited` rồi
+  `broadcast()`.
+
+### TC-I4 — Đóng tab nguồn
+- Thao tác: đang có hai nguồn, đóng tab của nguồn thứ hai.
+- Kỳ vọng: ô của tab đó mất, cửa sổ vẫn giữ nguồn còn lại; đóng nốt tab kia thì
+  cửa sổ đóng và danh sách rỗng.
+- Neo: `chrome.tabs.onRemoved` trong service worker lọc theo `tabId` rồi gọi
+  `stop-source`.
+
+### TC-I5 — Trần bốn nguồn
+- Thao tác: thêm nguồn thứ năm.
+- Kỳ vọng: popup hiện note lỗi `Up to 4 floating sources are supported.`, bốn ô cũ
+  vẫn vẽ bình thường.
+- Neo: `background/service-worker.js` — `MAX_SOURCES` chặn trong `createSource()`
+  trước khi xin stream; `offscreen/offscreen.js` — `MAX_SOURCES` chặn lần nữa.
+
+### TC-I6 — Worker bị thu hồi
+- Thao tác: dừng service worker ở `chrome://extensions` khi đang có hai nguồn rồi
+  mở lại popup.
+- Kỳ vọng: vẫn đủ hai dòng kèm nhãn tiêu đề tab.
+- Neo: `get-state` và `broadcast()` lấy `list-sources` từ offscreen document thay
+  vì giữ bản sao trong worker.
+
+### TC-I7 — Đóng popup khi đang có nguồn
+- Thao tác: đang có hai nguồn, mở rồi đóng popup.
+- Kỳ vọng: cả hai ô vẫn vẽ, chỉ báo chia sẻ tab vẫn còn.
+- Neo: `onDisconnect` chỉ giải phóng offscreen document khi không còn nguồn nào.
+
+## 12. Lệnh kiểm tra bằng console
 
 Console service worker (`chrome://extensions` → service worker):
 
@@ -462,7 +564,7 @@ Console của offscreen document (`chrome://extensions` → Inspect views
 document.pictureInPictureElement;
 ```
 
-## 12. Hành vi đã ghi nhận (theo mã, cần xác nhận khi chạy)
+## 13. Hành vi đã ghi nhận (theo mã, cần xác nhận khi chạy)
 
 Hai điểm đầu dưới đây suy ra từ mã nguồn, chưa chạy thực tế; điểm 3 lấy từ log
 thật trên YouTube. TC-F2, TC-E6 và TC-D1 là nơi ghi lại kết quả.
@@ -485,7 +587,7 @@ nút `Cancel` và việc đổi kích thước cửa sổ gửi `selection-cance
 TC-C5), và đóng PiP video luôn gửi `pip-exited` (TC-D3). Riêng `Stop PiP` vẫn
 không đóng cửa sổ PiP gốc của trang (TC-D4).
 
-## 13. Bảng ghi kết quả
+## 14. Bảng ghi kết quả
 
 | Mã ca | Kết quả | Ghi chú |
 | --- | --- | --- |
@@ -494,6 +596,8 @@ không đóng cửa sổ PiP gốc của trang (TC-D4).
 | TC-A3 |  |  |
 | TC-A4 |  |  |
 | TC-A5 |  |  |
+| TC-A6 |  |  |
+| TC-A7 |  |  |
 | TC-B1 |  |  |
 | TC-B2 |  |  |
 | TC-B3 |  |  |
@@ -505,6 +609,9 @@ không đóng cửa sổ PiP gốc của trang (TC-D4).
 | TC-C4 |  |  |
 | TC-C5 |  |  |
 | TC-C6 |  |  |
+| TC-C7 |  |  |
+| TC-C8 |  |  |
+| TC-C9 |  |  |
 | TC-D1 |  |  |
 | TC-D2 |  |  |
 | TC-D3 |  |  |
@@ -532,3 +639,10 @@ không đóng cửa sổ PiP gốc của trang (TC-D4).
 | TC-H4 |  |  |
 | TC-H5 |  |  |
 | TC-H6 |  |  |
+| TC-I1 |  |  |
+| TC-I2 |  |  |
+| TC-I3 |  |  |
+| TC-I4 |  |  |
+| TC-I5 |  |  |
+| TC-I6 |  |  |
+| TC-I7 |  |  |
