@@ -429,6 +429,51 @@ chrome.runtime.onInstalled.addListener(async () => {
   }
 });
 
+/* --- page context menu ---------------------------------------------- */
+
+const MENU_ROOT = "pipdesk-menu";
+
+/**
+ * The Chrome menu gets the actions that do not need the page's own click:
+ * "float this video" only exists on the YouTube control, because a page-side
+ * picture-in-picture request would arrive here without user activation.
+ */
+function buildContextMenu() {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: MENU_ROOT,
+      title: "PiPDesk",
+      contexts: ["page", "frame", "video"],
+    });
+    for (const [id, title] of [
+      ["pipdesk-float-tab", "Float this tab"],
+      ["pipdesk-float-region", "Float a region"],
+      ["pipdesk-stop", "Stop PiP"],
+    ]) {
+      chrome.contextMenus.create({
+        id,
+        parentId: MENU_ROOT,
+        title,
+        contexts: ["page", "frame", "video"],
+      });
+    }
+  });
+}
+
+chrome.runtime.onInstalled.addListener(buildContextMenu);
+chrome.runtime.onStartup.addListener(buildContextMenu);
+
+chrome.contextMenus.onClicked.addListener(async (info) => {
+  try {
+    if (info.menuItemId === "pipdesk-float-tab") await startFullTabPip();
+    if (info.menuItemId === "pipdesk-float-region") await startRegionSelection();
+    if (info.menuItemId === "pipdesk-stop") await stopPip();
+  } catch (error) {
+    lastError = String(error?.message || error);
+    console.error("[PiPDesk] context menu", error);
+  }
+});
+
 /**
  * The popup holds a port open, which keeps the worker alive for the session
  * and gives us the moment to prepare the tab stream before a capture mode is

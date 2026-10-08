@@ -16,6 +16,8 @@ reload the tab you are testing.
   promotion of a video element into picture-in-picture.
 - `content/content.js` — injected on demand by the service worker. Region
   selection overlay plus native video PiP. Never declared in the manifest.
+- `content/youtube.js` — the one declared content script. Puts the Quick PiP
+  control into YouTube's player bar and owns the menu behind its right click.
 - `popup/` — the toolbar popup. Sends messages, renders returned state.
 - `panels/` — notes, todos and timer. These run as extension pages inside a
   document picture-in-picture window.
@@ -26,9 +28,11 @@ reload the tab you are testing.
 
 - Plain ES2020, no modules, no frameworks. Each panel script stays under ~200
   lines.
-- Never hardcode a colour outside `shared/tokens.css`. `rgba()` scrims inside
-  the injected content script are the one exception, because that script cannot
-  load the token stylesheet.
+- Never hardcode a colour outside `shared/tokens.css`. Two exceptions, both
+  because the file cannot load the token stylesheet: `rgba()` scrims in
+  `content/content.js`, and the YouTube control in `content/youtube.js`, which
+  follows YouTube's own `--yt-spec-*` variables with rgba fallbacks so it
+  matches whatever theme the page happens to use.
 - Never pass user text to `innerHTML` without `Panel.escapeHtml`. Prefer
   `textContent`.
 - Storage goes through `Store`. `chrome.storage.local` is written first; sync is
@@ -36,10 +40,15 @@ reload the tab you are testing.
 - Day keys come from `Panel.localDateKey()`. Do not use `toISOString()` for a
   calendar day.
 - Timers and listeners must be cleared on pause, reset and unload.
+- A picture-in-picture request only succeeds from a context that still holds the
+  click's user activation. Calls that travel popup → service worker → content
+  script lose it and Chrome answers `NotAllowedError`, which is why the popup
+  and the YouTube control call `video.requestPictureInPicture()` themselves.
 - Anything added to the manifest requires a reason: permissions here are
   intentionally narrow (`activeTab`, `tabCapture`, `offscreen`, `scripting`,
-  `storage`, `alarms`, `notifications`). There are no host permissions and only
-  three web-accessible files.
+  `storage`, `alarms`, `notifications`, `contextMenus`). The only host access is
+  the `https://www.youtube.com/*` match the Quick PiP control needs; every other
+  page stays behind `activeTab`. Only three web-accessible files.
 
 ## Checks before you commit
 

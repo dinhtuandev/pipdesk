@@ -21,6 +21,13 @@
   "background": {
     "service_worker": "background/service-worker.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content/youtube.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "permissions": [
     "activeTab",
     "tabCapture",
@@ -28,7 +35,8 @@
     "scripting",
     "storage",
     "alarms",
-    "notifications"
+    "notifications",
+    "contextMenus"
   ],
   "web_accessible_resources": [
     {
