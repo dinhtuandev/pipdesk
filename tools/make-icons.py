@@ -15,14 +15,56 @@ import struct
 import zlib
 
 SIZES = (16, 48, 128)
-SUPERSAMPLE = 3
 OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "icons")
 
-GRADIENT_FROM = (0x8F, 0x74, 0xFF)
-GRADIENT_TO = (0x5B, 0x3C, 0xE0)
-SCREEN_STROKE = (255, 255, 255)
-INSET_FILL = (255, 255, 255)
-SHADOW = (0x24, 0x14, 0x66)
+# The gradient runs from the light at the top left to the dark under the card,
+# so the white card always sits on the dark end of the ramp.
+GRADIENT_LIGHT = (0x8A, 0x6B, 0xFF)
+GRADIENT_DARK = (0x3F, 0x23, 0xC4)
+FRAME_FILL = (255, 255, 255)
+CARD_FILL = (255, 255, 255)
+SHEEN = (255, 255, 255)
+SHADOW = (0x18, 0x0A, 0x46)
+
+CONTAINER_RADIUS = 0.22
+
+# One profile per toolbar slot. A 16 px icon cannot show a hole inside the frame
+# or a drop shadow, so it is drawn as two solid shapes with a gap between them;
+# the larger sizes add the hole, the sheen and the shadow.
+#
+#   frame:    (x0, y0, x1, y1, radius, wall)  wall 0 draws a solid block
+#   card:     (x0, y0, x1, y1, radius)        always overlaps the frame corner
+#   moat_px:  the gap that keeps the two white shapes apart. That gap is the
+#             whole point of the mark, so it is given in pixels, not fractions.
+SIZE_PROFILES = {
+    16: {
+        "supersample": 5,
+        "feather_px": 1.25,
+        "frame": (0.15, 0.17, 0.77, 0.69, 0.10, 0.0),
+        "card": (0.46, 0.44, 0.90, 0.79, 0.08),
+        "moat_px": 1.5,
+        "sheen": 0.0,
+        "shadow": 0.0,
+    },
+    48: {
+        "supersample": 4,
+        "feather_px": 1.6,
+        "frame": (0.15, 0.17, 0.71, 0.63, 0.09, 0.10),
+        "card": (0.44, 0.44, 0.87, 0.77, 0.07),
+        "moat_px": 2.0,
+        "sheen": 0.10,
+        "shadow": 0.0,
+    },
+    128: {
+        "supersample": 4,
+        "feather_px": 1.9,
+        "frame": (0.14, 0.16, 0.71, 0.63, 0.09, 0.085),
+        "card": (0.43, 0.43, 0.87, 0.77, 0.07),
+        "moat_px": 2.4,
+        "sheen": 0.13,
+        "shadow": 0.30,
+    },
+}
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -44,54 +86,109 @@ def over(base, top, alpha):
     return tuple(base[i] + (top[i] - base[i]) * alpha for i in range(3))
 
 
-def shade(u: float, v: float) -> tuple[float, float, float]:
+def container_colour(u: float, v: float, profile) -> tuple[float, float, float]:
+    """Background gradient plus the soft light that falls from the top edge."""
     t = clamp((u + v) / 2.0, 0.0, 1.0)
-    return over(GRADIENT_FROM, GRADIENT_TO, t)
+    colour = over(GRADIENT_LIGHT, GRADIENT_DARK, t)
+    if profile["sheen"]:
+        colour = over(colour, SHEEN, profile["sheen"] * clamp((0.32 - v) / 0.32, 0.0, 1.0))
+    return colour
 
 
-def sample(u: float, v: float, feather: float):
-    """Colour for one subsample at normalised coordinates, plus its alpha."""
-    alpha = coverage(rounded_rect_sdf(u, v, 0.0, 0.0, 1.0, 1.0, 0.22), feather)
+def ring(outer_coverage: float, inner_coverage: float) -> float:
+    """Coverage of a band bounded by an outer and an inner shape."""
+    return max(0.0, outer_coverage - inner_coverage)
+
+
+def sample(u: float, v: float, size: int, profile):
+    """Colour for one subsample at normalised coordinates, plus its alpha.
+
+    Draw order is the whole trick: background, frame, then the moat punched in
+    the background colour, then the card. Swap the last two and the white shapes
+    fuse into one blob at small sizes.
+    """
+    feather = profile["feather_px"] / size
+
+    alpha = coverage(
+        rounded_rect_sdf(u, v, 0.0, 0.0, 1.0, 1.0, CONTAINER_RADIUS), feather
+    )
     if alpha <= 0.0:
         return (0.0, 0.0, 0.0, 0.0)
 
-    colour = shade(u, v)
+    background = container_colour(u, v, profile)
+    colour = background
 
-    # Soft drop shadow under the inset card.
-    shadow = coverage(rounded_rect_sdf(u, v, 0.40, 0.46, 0.84, 0.74, 0.07), feather)
-    if shadow:
-        colour = over(colour, SHADOW, 0.35 * shadow)
+    fx0, fy0, fx1, fy1, fradius, wall = profile["frame"]
+    frame_outer = coverage(
+        rounded_rect_sdf(u, v, fx0, fy0, fx1, fy1, fradius), feather
+    )
+    if wall > 0:
+        frame_inner = coverage(
+            rounded_rect_sdf(
+                u,
+                v,
+                fx0 + wall,
+                fy0 + wall,
+                fx1 - wall,
+                fy1 - wall,
+                max(fradius - wall, 0.0),
+            ),
+            feather,
+        )
+        frame = ring(frame_outer, frame_inner)
+    else:
+        frame = frame_outer
+    colour = over(colour, FRAME_FILL, frame)
 
-    # Outline of the "screen".
-    screen_distance = abs(rounded_rect_sdf(u, v, 0.17, 0.19, 0.65, 0.56, 0.09))
-    stroke = coverage(screen_distance - 0.035, feather)
-    if stroke:
-        colour = over(colour, SCREEN_STROKE, stroke)
+    cx0, cy0, cx1, cy1, cradius = profile["card"]
+    moat = profile["moat_px"] / size
+    card = coverage(rounded_rect_sdf(u, v, cx0, cy0, cx1, cy1, cradius), feather)
+    moat_outer = coverage(
+        rounded_rect_sdf(
+            u, v, cx0 - moat, cy0 - moat, cx1 + moat, cy1 + moat, cradius + moat
+        ),
+        feather,
+    )
+    colour = over(colour, background, ring(moat_outer, card))
 
-    # Filled picture-in-picture card.
-    inset = coverage(rounded_rect_sdf(u, v, 0.41, 0.47, 0.85, 0.75, 0.07), feather)
-    if inset:
-        colour = over(colour, INSET_FILL, inset)
+    if profile["shadow"]:
+        offset_x, offset_y = 0.012, 0.022
+        shadow = coverage(
+            rounded_rect_sdf(
+                u,
+                v,
+                cx0 + offset_x - moat,
+                cy0 + offset_y - moat,
+                cx1 + offset_x + moat,
+                cy1 + offset_y + moat,
+                cradius + moat,
+            ),
+            feather,
+        )
+        colour = over(colour, SHADOW, profile["shadow"] * ring(shadow, card))
+
+    colour = over(colour, CARD_FILL, card)
 
     return (colour[0], colour[1], colour[2], alpha)
 
 
-def render(size: int):
+def render(size: int, profile):
+    supersample = profile["supersample"]
     rows = []
     for y in range(size):
         row = []
         for x in range(size):
             r = g = b = a = 0.0
-            for sy in range(SUPERSAMPLE):
-                for sx in range(SUPERSAMPLE):
-                    u = (x + (sx + 0.5) / SUPERSAMPLE) / size
-                    v = (y + (sy + 0.5) / SUPERSAMPLE) / size
-                    sr, sg, sb, sa = sample(u, v, feather=2.0 / size)
+            for sy in range(supersample):
+                for sx in range(supersample):
+                    u = (x + (sx + 0.5) / supersample) / size
+                    v = (y + (sy + 0.5) / supersample) / size
+                    sr, sg, sb, sa = sample(u, v, size, profile)
                     r += sr * sa
                     g += sg * sa
                     b += sb * sa
                     a += sa
-            total = SUPERSAMPLE * SUPERSAMPLE
+            total = supersample * supersample
             if a > 0:
                 row.append(
                     (
@@ -137,7 +234,7 @@ def main() -> None:
     os.makedirs(OUT_DIR, exist_ok=True)
     for size in SIZES:
         target = os.path.join(OUT_DIR, f"icon{size}.png")
-        write_png(target, render(size))
+        write_png(target, render(size, SIZE_PROFILES[size]))
         print(f"wrote {target} ({os.path.getsize(target)} bytes)")
 
 
