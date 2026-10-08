@@ -15,6 +15,19 @@ const PANELS = {
 
 const IDLE_STATE = { capturing: false, mode: null, tabId: null, selecting: false };
 let state = { ...IDLE_STATE };
+let streamTabId = null;
+let streamReady = null;
+let lastError = "";
+
+/** Messages that begin an action clear the previous failure reason. */
+const ACTION_MESSAGES = new Set([
+  "start-full-pip",
+  "start-region",
+  "region-selected",
+  "start-video-pip",
+  "video-pip-started",
+  "stop-pip",
+]);
 
 /* --- small helpers -------------------------------------------------- */
 
@@ -93,16 +106,68 @@ async function hasOffscreenDocument() {
   return offscreenExists();
 }
 
+/**
+ * Open the tab stream once and share it between the capture modes. While the
+ * stream for a tab is still alive every caller gets the same promise.
+ */
+function ensureStream(tabId) {
+  if (streamTabId === tabId && streamReady) return streamReady;
+
+  streamTabId = tabId;
+  streamReady = (async () => {
+    await ensureOffscreen();
+    const tab = await chrome.tabs.get(tabId);
+    const streamId = await chrome.tabCapture.getMediaStreamId({
+      targetTabId: tabId,
+    });
+    const initialSize = { width: tab.width, height: tab.height };
+    const result = await toOffscreen({
+      type: "initialize-stream",
+      streamId,
+      initialSize,
+    });
+    if (!result?.ok) {
+      throw new Error(result?.error || "Could not start the tab stream.");
+    }
+    return tabId;
+  })();
+
+  streamReady.catch(() => {
+    streamTabId = null;
+    streamReady = null;
+  });
+  return streamReady;
+}
+
+/** Drop the shared stream and the offscreen document that holds it. */
+async function stopTabStream() {
+  streamTabId = null;
+  streamReady = null;
+  try {
+    if (await hasOffscreenDocument()) {
+      await toOffscreen({ type: "stop" });
+    }
+  } catch (error) {
+    console.warn("[PiPDesk] offscreen stop failed", error);
+  }
+  await closeOffscreen();
+}
+
 /* --- capture flows -------------------------------------------------- */
 
 async function startFullTabPip() {
   const tab = await activeTab();
-  const streamId = await chrome.tabCapture.getMediaStreamId({
-    targetTabId: tab.id,
-  });
   state = { capturing: true, mode: "full", tabId: tab.id, selecting: false };
   broadcast();
-  await toOffscreen({ type: "start-capture", streamId, mode: "full" });
+  try {
+    await ensureStream(tab.id);
+    const result = await toOffscreen({ type: "start-full-pip" });
+    if (!result?.ok) throw new Error(result?.error || "PiP was refused.");
+  } catch (error) {
+    state = { ...IDLE_STATE };
+    broadcast();
+    throw error;
+  }
   return { ok: true, state };
 }
 
@@ -126,18 +191,21 @@ async function beginRegionCapture({ rect, viewport }, sender) {
   const tabId = sender.tab?.id;
   if (tabId === undefined) throw new Error("Lost track of the source tab.");
 
-  const streamId = await chrome.tabCapture.getMediaStreamId({
-    targetTabId: tabId,
-  });
   state = { capturing: true, mode: "region", tabId, selecting: false };
   broadcast();
-  await toOffscreen({
-    type: "start-capture",
-    streamId,
-    mode: "region",
-    rect,
-    viewport,
-  });
+  try {
+    await ensureStream(tabId);
+    const result = await toOffscreen({
+      type: "start-custom-pip",
+      rect,
+      viewport,
+    });
+    if (!result?.ok) throw new Error(result?.error || "PiP was refused.");
+  } catch (error) {
+    state = { ...IDLE_STATE };
+    broadcast();
+    throw error;
+  }
   return { ok: true, state };
 }
 
@@ -150,17 +218,44 @@ async function startVideoPip() {
   if (!response?.ok) {
     throw new Error(response?.error || "No playable video found on this page.");
   }
-  state = {
-    capturing: false,
-    mode: "video",
-    tabId: tab.id,
-    selecting: false,
-  };
+  return enterVideoState(tab.id);
+}
+
+/** Both video paths end here: the page owns that picture-in-picture window. */
+async function enterVideoState(tabId) {
+  // A page-owned window needs no tab stream, so release it.
+  await stopTabStream();
+  state = { capturing: false, mode: "video", tabId, selecting: false };
   broadcast();
   return { ok: true, state };
 }
 
+/** The popup already opened the page's own window: just record and clean up. */
+async function markVideoPipStarted() {
+  const tab = await activeTab();
+  return enterVideoState(tab.id);
+}
+
+/** Ask the tab whether it holds a video the browser could float. */
+async function checkVideo() {
+  try {
+    const tab = await activeTab();
+    await ensureContentScript(tab.id);
+    const response = await chrome.tabs.sendMessage(tab.id, {
+      type: "check-for-videos",
+    });
+    return { ok: true, hasVideo: Boolean(response?.hasVideo) };
+  } catch (error) {
+    // A page that refuses the content script simply has nothing to offer.
+    console.warn("[PiPDesk] video check skipped", error);
+    return { ok: true, hasVideo: false };
+  }
+}
+
 async function cancelRegionSelection() {
+  // A cancel that arrives after the capture started must not end the session.
+  if (state.capturing) return { ok: true, state };
+
   if (state.tabId !== null) {
     try {
       await chrome.tabs.sendMessage(state.tabId, { type: "cancel-selection" });
@@ -174,14 +269,7 @@ async function cancelRegionSelection() {
 }
 
 async function stopPip() {
-  try {
-    if (await hasOffscreenDocument()) {
-      await toOffscreen({ type: "stop" });
-    }
-  } catch (error) {
-    console.warn("[PiPDesk] offscreen stop failed", error);
-  }
-  await closeOffscreen();
+  await stopTabStream();
 
   if (state.tabId !== null) {
     try {
@@ -260,9 +348,11 @@ async function openPanel(page) {
 /* --- message routing ------------------------------------------------ */
 
 async function handle(message, sender) {
+  if (ACTION_MESSAGES.has(message?.type)) lastError = "";
+
   switch (message?.type) {
     case "get-state":
-      return { ok: true, state };
+      return { ok: true, state, error: lastError };
 
     case "start-full-pip":
       return startFullTabPip();
@@ -279,6 +369,12 @@ async function handle(message, sender) {
     case "start-video-pip":
       return startVideoPip();
 
+    case "video-pip-started":
+      return markVideoPipStarted();
+
+    case "check-video":
+      return checkVideo();
+
     case "stop-pip":
       return stopPip();
 
@@ -287,14 +383,15 @@ async function handle(message, sender) {
 
     case "pip-exited":
       state = { ...IDLE_STATE };
-      await closeOffscreen();
+      await stopTabStream();
       broadcast();
       return { ok: true, state };
 
     case "offscreen-error":
       console.error("[PiPDesk] offscreen:", message.message);
+      lastError = message.message;
       state = { ...IDLE_STATE };
-      await closeOffscreen();
+      await stopTabStream();
       broadcast();
       chrome.runtime
         .sendMessage({ type: "alert", message: message.message })
@@ -315,8 +412,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   pending
     .then((result) => sendResponse(result))
     .catch((error) => {
+      const text = String(error?.message || error);
+      lastError = text;
       console.error("[PiPDesk]", error);
-      sendResponse({ ok: false, error: String(error?.message || error) });
+      sendResponse({ ok: false, error: text });
     });
   return true;
 });
@@ -328,6 +427,34 @@ chrome.runtime.onInstalled.addListener(async () => {
   if (!settings) {
     await chrome.storage.local.set({ settings: { syncEnabled: false } });
   }
+});
+
+/**
+ * The popup holds a port open, which keeps the worker alive for the session
+ * and gives us the moment to prepare the tab stream before a capture mode is
+ * picked. Closing the popup with nothing floating releases it again.
+ */
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "popup") return;
+
+  activeTab()
+    .then((tab) => ensureStream(tab.id))
+    .catch((error) => {
+      // A page that refuses capture must not break the popup: the capture
+      // buttons ask for the stream again and report the real error.
+      console.warn("[PiPDesk] stream warm-up skipped", error);
+    });
+
+  port.onDisconnect.addListener(() => {
+    // A capture window or a running selection must survive the popup closing.
+    if (state.capturing || state.selecting) return;
+    // The page owns its own video window, so keep reporting it as floating.
+    if (state.mode !== "video") {
+      state = { ...IDLE_STATE };
+      broadcast();
+    }
+    stopTabStream();
+  });
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {

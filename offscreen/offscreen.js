@@ -102,43 +102,73 @@ function stopFrameLoop() {
 
 /* --- capture lifecycle ---------------------------------------------- */
 
-async function startCapture(message) {
+/** Wait until a video has decoded a frame; PiP refuses a video without one. */
+function waitForData(video) {
+  if (video.readyState >= 2) return Promise.resolve();
+  return once(video, "loadeddata").catch(() => {
+    /* fall through: the PiP request will report the real failure */
+  });
+}
+
+/**
+ * Decode the tab stream once. The capture size is pinned to the tab's own
+ * size so the rectangle the user dragged maps onto the crop one to one.
+ */
+async function initializeRecording(message) {
   await stopCapture();
 
-  mode = message.mode;
-  rect = message.rect || null;
-  viewport = message.viewport || null;
+  const bounds = message.initialSize || {};
+  const mandatory = {
+    chromeMediaSource: "tab",
+    chromeMediaSourceId: message.streamId,
+    maxFrameRate: 30,
+  };
+  if (bounds.width > 0 && bounds.height > 0) {
+    mandatory.minWidth = bounds.width;
+    mandatory.maxWidth = bounds.width;
+    mandatory.minHeight = bounds.height;
+    mandatory.maxHeight = bounds.height;
+  }
 
   tabStream = await navigator.mediaDevices.getUserMedia({
     audio: false,
-    video: {
-      mandatory: {
-        chromeMediaSource: "tab",
-        chromeMediaSourceId: message.streamId,
-        maxFrameRate: 30,
-      },
-    },
+    video: { mandatory },
   });
 
   sourceVideo.srcObject = tabStream;
+  await waitForData(sourceVideo);
   await sourceVideo.play().catch(() => {});
-  if (sourceVideo.readyState < 1) await once(sourceVideo, "loadedmetadata");
+  return { ok: true };
+}
 
-  if (mode === "full") {
-    await sourceVideo.requestPictureInPicture();
-    return { ok: true };
-  }
+async function startFullPip() {
+  if (!tabStream) throw new Error("The tab stream is not ready.");
+  mode = "full";
+  await waitForData(sourceVideo);
+  await sourceVideo.play().catch(() => {});
+  await sourceVideo.requestPictureInPicture();
+  return { ok: true };
+}
 
+async function startCustomPip(message) {
+  if (!tabStream) throw new Error("The tab stream is not ready.");
+
+  rect = message.rect || null;
+  viewport = message.viewport || null;
   if (!rect || !viewport) {
     throw new Error("Region capture needs a selection rectangle.");
   }
 
+  mode = "region";
+  await waitForData(sourceVideo);
+
   cropStream = cropCanvas.captureStream(30);
   cropVideo.srcObject = cropStream;
-  await cropVideo.play().catch(() => {});
-  if (cropVideo.readyState < 1) await once(cropVideo, "loadedmetadata");
-
   pumpFrames();
+  await cropVideo.play().catch(() => {});
+  // The canvas stream has no frame until the first crop lands, so wait for
+  // one before handing the video to picture-in-picture.
+  await waitForData(cropVideo);
   await cropVideo.requestPictureInPicture();
   return { ok: true };
 }
@@ -187,17 +217,22 @@ document.addEventListener(
 
 /* --- messaging ------------------------------------------------------ */
 
+const TASKS = {
+  "initialize-stream": initializeRecording,
+  "start-full-pip": startFullPip,
+  "start-custom-pip": startCustomPip,
+  stop: stopCapture,
+};
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.target !== "offscreen") return false;
 
-  const task =
-    message.type === "start-capture"
-      ? startCapture(message)
-      : message.type === "stop"
-        ? stopCapture()
-        : Promise.resolve({ ok: false, error: `Unsupported: ${message.type}` });
+  const task = TASKS[message.type];
+  const pending = task
+    ? task(message)
+    : Promise.resolve({ ok: false, error: `Unsupported: ${message.type}` });
 
-  task
+  pending
     .then((result) => sendResponse(result))
     .catch((error) => {
       const text = String(error?.message || error);

@@ -67,6 +67,58 @@ body {
   gap: var(--sp-2);
 }
 
+/* Capture mode switch ------------------------------------------------- */
+
+.modes {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.mode {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.mode:hover:not(:disabled):not(.is-active) {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.mode.is-active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.mode:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Marks that the page actually has a video to float. */
+.mode.has-video::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}
+
 /* Action buttons ----------------------------------------------------- */
 
 .action {

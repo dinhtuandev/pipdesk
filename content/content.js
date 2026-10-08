@@ -18,6 +18,10 @@ if (!window.__pipDeskContentScript) {
     scrim: "rgba(9,11,16,.64)",
   };
   const MIN_SIDE = 24;
+  /* The overlay covers the page, so the action bar needs a higher stack level
+     or the overlay swallows the presses meant for its buttons. */
+  const OVERLAY_Z = 2147483646;
+  const BAR_Z = 2147483647;
   const FONT_STACK =
     '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 
@@ -50,7 +54,7 @@ if (!window.__pipDeskContentScript) {
     host.id = OVERLAY_ID;
     host.setAttribute(
       "style",
-      `position:fixed;inset:0;z-index:2147483647;cursor:crosshair;font-family:${FONT_STACK}`,
+      `position:fixed;inset:0;z-index:${OVERLAY_Z};cursor:crosshair;font-family:${FONT_STACK}`,
     );
 
     const hole = document.createElement("div");
@@ -82,7 +86,8 @@ if (!window.__pipDeskContentScript) {
     bar.setAttribute(
       "style",
       [
-        "position:absolute",
+        "position:fixed",
+        `z-index:${BAR_Z}`,
         "display:none",
         "align-items:center",
         "gap:8px",
@@ -104,8 +109,11 @@ if (!window.__pipDeskContentScript) {
     const cancel = button("Cancel", false);
     bar.append(size, accept, cancel);
 
-    host.append(hole, hint, bar);
-    document.documentElement.appendChild(host);
+    // The action bar sits beside the overlay, not inside it: a press on a
+    // button must never be read as the start of a new selection. It also has
+    // to paint above the overlay, or the overlay swallows the click.
+    host.append(hole, hint);
+    document.documentElement.append(host, bar);
 
     return { host, hole, hint, bar, size, accept, cancel };
   }
@@ -149,6 +157,7 @@ if (!window.__pipDeskContentScript) {
 
   function onPointerDown(event) {
     if (!ui || event.button !== 0) return;
+    if (ui.bar.contains(event.target)) return;
     const point = pointFrom(event);
     rect = { x: point.x, y: point.y, width: 0, height: 0 };
     ui.start = point;
@@ -176,23 +185,26 @@ if (!window.__pipDeskContentScript) {
 
   function sendSelection() {
     if (!rect || rect.width < MIN_SIDE || rect.height < MIN_SIDE) return;
-    chrome.runtime.sendMessage({
-      type: "region-selected",
-      rect,
-      viewport: { width: window.innerWidth, height: window.innerHeight },
-    });
-    teardown();
+    chrome.runtime
+      .sendMessage({
+        type: "region-selected",
+        rect,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+      })
+      .catch(() => {});
+    teardown("commit");
   }
 
   function onKeyDown(event) {
     if (event.key === "Escape") {
       event.preventDefault();
-      chrome.runtime
-        .sendMessage({ type: "selection-cancelled" })
-        .catch(() => {});
-      teardown();
+      teardown("cancel");
     }
     if (event.key === "Enter") sendSelection();
+  }
+
+  function cancelSelection() {
+    teardown("cancel");
   }
 
   function clearSelection() {
@@ -201,16 +213,28 @@ if (!window.__pipDeskContentScript) {
     ui.host.removeEventListener("pointermove", onPointerMove);
     ui.host.removeEventListener("pointerup", onPointerUp);
     ui.accept.removeEventListener("click", sendSelection);
-    ui.cancel.removeEventListener("click", teardown);
+    ui.cancel.removeEventListener("click", cancelSelection);
     document.removeEventListener("keydown", onKeyDown, true);
-    window.removeEventListener("resize", teardown);
+    window.removeEventListener("resize", onViewportChange);
     ui.host.remove();
+    ui.bar.remove();
     ui = null;
     rect = null;
   }
 
-  function teardown() {
+  /**
+   * The single exit for the overlay. "commit" has already told the service
+   * worker about the rectangle; every other reason cancels the pending
+   * selection so the worker is never left waiting for one.
+   */
+  function teardown(reason) {
     clearSelection();
+    if (reason === "commit") return;
+    chrome.runtime.sendMessage({ type: "selection-cancelled" }).catch(() => {});
+  }
+
+  function onViewportChange() {
+    teardown("cancel");
   }
 
   function startSelection() {
@@ -218,61 +242,83 @@ if (!window.__pipDeskContentScript) {
 
     ui = buildUi();
     ui.accept.addEventListener("click", sendSelection);
-    ui.cancel.addEventListener("click", teardown);
+    ui.cancel.addEventListener("click", cancelSelection);
     ui.host.addEventListener("pointerdown", onPointerDown);
     ui.host.addEventListener("pointermove", onPointerMove);
     ui.host.addEventListener("pointerup", onPointerUp);
     document.addEventListener("keydown", onKeyDown, true);
-    window.addEventListener("resize", teardown);
+    window.addEventListener("resize", onViewportChange);
     return { ok: true };
   }
 
   /* --- native video PiP ---------------------------------------------- */
 
+  /* The same eligibility test the 1.1.0 source uses: a source, a real size and
+     nothing hiding it. Nothing else — a player like YouTube's sits in states a
+     stricter test rejects while the video itself would float fine. */
   function isPlayable(video) {
-    if (video.disablePictureInPicture) return false;
-    const source = video.currentSrc || video.src || video.querySelector("source");
+    const source =
+      video.src || video.querySelector("source")?.src || video.currentSrc;
     if (!source) return false;
 
     const bounds = video.getBoundingClientRect();
-    if (bounds.width < 40 || bounds.height < 40) return false;
+    if (bounds.width <= 0 || bounds.height <= 0) return false;
 
     const style = getComputedStyle(video);
-    return (
-      style.display !== "none" &&
-      style.visibility !== "hidden" &&
-      Number(style.opacity) > 0
-    );
+    return style.display !== "none" && style.visibility !== "hidden";
   }
 
   async function startVideoPip() {
-    const candidates = Array.from(document.querySelectorAll("video")).filter(
-      isPlayable,
-    );
-    if (candidates.length === 0) {
-      return { ok: false, error: "No playable video found on this page." };
-    }
+    let attempted = false;
+    let firstError = null;
 
-    for (const video of candidates) {
+    for (const video of document.querySelectorAll("video")) {
+      if (!isPlayable(video)) continue;
+      attempted = true;
+
       try {
         if (video.paused) await video.play().catch(() => {});
         await video.requestPictureInPicture();
         return { ok: true };
       } catch (error) {
-        /* try the next candidate */
+        if (!firstError) firstError = error;
+        /* The loop swallows this, so say it out loud: without the reason the
+           popup can only report "refused" with no idea why. */
+        console.warn("[PiPDesk] video PiP refused", {
+          readyState: video.readyState,
+          videoWidth: video.videoWidth,
+          paused: video.paused,
+          muted: video.muted,
+          disabled: video.disablePictureInPicture,
+          source: String(video.currentSrc || video.src || "").slice(0, 64),
+          error: `${error?.name}: ${error?.message}`,
+          pictureInPictureEnabled: document.pictureInPictureEnabled,
+          pictureInPictureBusy: document.pictureInPictureElement !== null,
+        });
       }
     }
-    return { ok: false, error: "This page refused picture-in-picture." };
+
+    if (!attempted) {
+      return { ok: false, error: "No playable video found on this page." };
+    }
+    return {
+      ok: false,
+      error: `This page refused picture-in-picture. (${
+        firstError?.name || "unknown"
+      })`,
+    };
+  }
+
+  /** True while the page holds at least one video the browser could float. */
+  function hasPlayableVideo() {
+    return Array.from(document.querySelectorAll("video")).some(isPlayable);
   }
 
   document.addEventListener(
     "leavepictureinpicture",
     (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLVideoElement)) return;
-      if (!isPlayable(target)) {
-        chrome.runtime.sendMessage({ type: "pip-exited" }).catch(() => {});
-      }
+      if (!(event.target instanceof HTMLVideoElement)) return;
+      chrome.runtime.sendMessage({ type: "pip-exited" }).catch(() => {});
     },
     true,
   );
@@ -289,7 +335,7 @@ if (!window.__pipDeskContentScript) {
         return false;
       case "cancel-selection":
       case "teardown":
-        teardown();
+        clearSelection();
         sendResponse({ ok: true });
         return false;
       case "start-video-pip":
@@ -299,9 +345,16 @@ if (!window.__pipDeskContentScript) {
             sendResponse({ ok: false, error: String(error?.message || error) }),
           );
         return true;
+      case "check-for-videos":
+        sendResponse({ ok: true, hasVideo: hasPlayableVideo() });
+        return false;
       default:
         sendResponse({ ok: false, error: `Unsupported: ${message?.type}` });
         return false;
     }
   });
+
+  /* The popup drives video PiP through chrome.scripting.executeScript, so this
+     entry point has to be reachable from the isolated world. */
+  window.__pipDeskStartVideoPip = () => startVideoPip();
 }
