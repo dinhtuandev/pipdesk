@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <title>PiPDesk capture</title>
+    <link rel="stylesheet" href="../shared/tokens.css" />
   </head>
   <body>
-    <!-- Invisible working surface: the tab stream is decoded here, cropped on a
-         canvas when a region is selected, and each video is promoted to a
-         picture-in-picture window on demand. -->
-    <video id="source-video" playsinline muted></video>
-    <canvas id="crop-canvas"></canvas>
-    <video id="crop-video" playsinline muted></video>
+    <!-- Invisible working surface. Every source is decoded in its own hidden
+         <video> and painted into this one canvas, because a document can only
+         ever hold a single picture-in-picture window. -->
+    <canvas id="composite-canvas" width="1280" height="720"></canvas>
+    <video id="pip-video" playsinline muted></video>
     <script src="offscreen.js"></script>
   </body>
 </html>

@@ -44,6 +44,10 @@ reload the tab you are testing.
   click's user activation. Calls that travel popup → service worker → content
   script lose it and Chrome answers `NotAllowedError`, which is why the popup
   and the YouTube control call `video.requestPictureInPicture()` themselves.
+- One document tree can only hold one picture-in-picture window: a second request
+  from the offscreen document or one of its iframes replaces the first (measured,
+  TC-I2). Several sources therefore share a single canvas in
+  `offscreen/offscreen.js`; do not go back to assuming one capture per window.
 - Anything added to the manifest requires a reason: permissions here are
   intentionally narrow (`activeTab`, `tabCapture`, `offscreen`, `scripting`,
   `storage`, `alarms`, `notifications`, `contextMenus`). The only host access is

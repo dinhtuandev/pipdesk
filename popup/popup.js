@@ -8,8 +8,11 @@ const els = {
   note: document.getElementById("note"),
   stop: document.getElementById("stop"),
   stopHint: document.getElementById("stop-hint"),
+  stopAll: document.getElementById("stop-all"),
+  sourceList: document.getElementById("source-list"),
   version: document.getElementById("version"),
   sync: document.getElementById("sync"),
+  floatSite: document.getElementById("float-site"),
   start: document.getElementById("cap-start"),
   startTitle: document.getElementById("start-title"),
   startHint: document.getElementById("start-hint"),
@@ -105,18 +108,64 @@ function updateToggleState(available) {
   if (pipMode === "video" && !hasVideo) setPipMode("tab");
 }
 
-function render(state) {
-  live = Boolean(state?.mode);
-  const selecting = Boolean(state?.selecting);
+const KIND_LABEL = { full: "Whole tab", region: "Selected region" };
+
+function sourceLabel(source) {
+  const title = String(source?.title || "").trim();
+  const kind = KIND_LABEL[source?.kind] || "Floating window";
+  return title ? `${title} — ${kind}` : kind;
+}
+
+/** One row per floating source, each with its own stop button. */
+function renderSources(sources) {
+  els.sourceList.replaceChildren();
+
+  for (const source of sources) {
+    const row = document.createElement("div");
+    row.className = "source";
+
+    const label = document.createElement("span");
+    label.className = "source__label";
+    label.textContent = sourceLabel(source);
+
+    const stop = document.createElement("button");
+    stop.type = "button";
+    stop.className = "source__stop";
+    stop.textContent = "Stop";
+    stop.addEventListener("click", async () => {
+      stop.disabled = true;
+      await send({ type: "stop-pip", sourceId: source.id });
+      await loadState();
+    });
+
+    row.append(label, stop);
+    els.sourceList.appendChild(row);
+  }
+
+  els.stopAll.hidden = sources.length < 2;
+}
+
+async function loadState() {
+  const response = await send({ type: "get-state" });
+  if (response.ok) render(response);
+  return response;
+}
+
+function render(payload) {
+  const sources = Array.isArray(payload?.sources) ? payload.sources : [];
+  live = sources.length > 0;
+  const selecting = Boolean(payload?.selecting);
 
   els.status.classList.toggle("is-live", live);
   els.stop.hidden = !live;
   els.stop.disabled = !live;
+  renderSources(sources);
 
   if (live) {
-    els.stopHint.textContent = `${
-      MODE_LABEL[state.mode] || "Something"
-    } is floating`;
+    els.stopHint.textContent =
+      sources.length === 1
+        ? "1 floating source"
+        : `${sources.length} floating sources`;
   }
 
   applyModeAvailability();
@@ -136,12 +185,12 @@ async function run(button, message, { close = false, okText = "" } = {}) {
     setNote(response.error || "That did not work.", "error");
     // Re-enable whatever the current state allows.
     const current = await send({ type: "get-state" });
-    if (current.ok) render(current.state);
+    if (current.ok) render(current);
     else button.disabled = false;
     return;
   }
 
-  if (response.state) render(response.state);
+    if (response.state) render(response);
   if (okText) setNote(okText, "ok");
   if (close) window.close();
 }
@@ -181,12 +230,12 @@ async function startVideoPipFromPopup() {
     if (!response.ok) {
       throw new Error(response.error || "The extension did not answer.");
     }
-    render(response.state);
+    render(response);
     window.close();
   } catch (error) {
     setNote(String(error?.message || error), "error");
     const current = await send({ type: "get-state" });
-    if (current.ok) render(current.state);
+    if (current.ok) render(current);
     else els.start.disabled = false;
   }
 }
@@ -217,6 +266,13 @@ function bind() {
   els.stop.addEventListener("click", () =>
     run(els.stop, { type: "stop-pip" }, { okText: "Stopped." }),
   );
+
+  els.stopAll.addEventListener("click", async () => {
+    els.stopAll.disabled = true;
+    await send({ type: "stop-pip" });
+    await loadState();
+    els.stopAll.disabled = false;
+  });
 
   for (const [page, button] of Object.entries(els.panels)) {
     button.addEventListener("click", () =>
@@ -263,11 +319,77 @@ function bindSyncSwitch() {
   });
 }
 
+/* --- float button per site ------------------------------------------ */
+
+let floatOrigin = null;
+
+/** The origin of the tab this popup was opened on, or null if it has none. */
+async function currentOrigin() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const url = tab?.url || "";
+  if (!/^https?:\/\//.test(url)) return null;
+  floatOrigin = new URL(url).origin;
+  return floatOrigin;
+}
+
+async function loadFloatSwitch() {
+  if (!(await currentOrigin())) {
+    els.floatSite.checked = false;
+    els.floatSite.disabled = true;
+    return;
+  }
+  const status = await send({ type: "float-site-status", origin: floatOrigin });
+  els.floatSite.checked = Boolean(status.ok && status.enabled);
+}
+
+function bindFloatSwitch() {
+  els.floatSite.addEventListener("change", async () => {
+    const wanted = els.floatSite.checked;
+    if (!floatOrigin) return;
+
+    els.floatSite.disabled = true;
+    try {
+      if (wanted) {
+        // The request has to start here: only a popup click counts as the user
+        // gesture Chrome wants before it asks about a new site.
+        const granted = await chrome.permissions.request({
+          origins: [`${floatOrigin}/*`],
+        });
+        if (!granted) {
+          els.floatSite.checked = false;
+          setNote("Chrome did not give access to this site.");
+          return;
+        }
+      }
+
+      const response = await send({
+        type: "float-site-toggle",
+        origin: floatOrigin,
+        on: wanted,
+      });
+      if (!response.ok) {
+        throw new Error(response.error || "That did not work.");
+      }
+      setNote(
+        wanted
+          ? "Float button on for this site. Reload the page to see it."
+          : "Float button off for this site.",
+        wanted ? "ok" : "",
+      );
+    } catch (error) {
+      els.floatSite.checked = !wanted;
+      setNote(String(error?.message || error), "error");
+    } finally {
+      els.floatSite.disabled = false;
+    }
+  });
+}
+
 /* --- lifecycle ------------------------------------------------------ */
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.target === "offscreen") return;
-  if (message?.type === "state") render(message.state);
+  if (message?.type === "state") render(message);
   if (message?.type === "alert") setNote(message.message, "error");
 });
 
@@ -278,10 +400,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   setPipMode("tab");
   bindSyncSwitch();
   await loadSyncSwitch();
+  bindFloatSwitch();
+  await loadFloatSwitch();
 
   const response = await send({ type: "get-state" });
   if (response.ok) {
-    render(response.state);
+    render(response);
     // A capture that failed while this popup was closed reports itself here.
     if (response.error) setNote(response.error, "error");
   } else {

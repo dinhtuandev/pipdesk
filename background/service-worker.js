@@ -13,11 +13,12 @@ const PANELS = {
   timer: { file: "panels/timer.html", width: 340, height: 580 },
 };
 
-const IDLE_STATE = { capturing: false, mode: null, tabId: null, selecting: false };
-let state = { ...IDLE_STATE };
-let streamTabId = null;
-let streamReady = null;
+/** The floating sources live in the offscreen document; the worker only tracks
+    the running selection and the last failure. */
+let selecting = false;
 let lastError = "";
+
+const MAX_SOURCES = 4;
 
 /** Messages that begin an action clear the previous failure reason. */
 const ACTION_MESSAGES = new Set([
@@ -31,10 +32,13 @@ const ACTION_MESSAGES = new Set([
 
 /* --- small helpers -------------------------------------------------- */
 
-function broadcast() {
-  chrome.runtime.sendMessage({ type: "state", state }).catch(() => {
-    /* no listener open right now */
-  });
+async function broadcast() {
+  const sources = await listSources();
+  chrome.runtime
+    .sendMessage({ type: "state", sources, selecting, error: lastError })
+    .catch(() => {
+      /* no listener open right now */
+    });
 }
 
 async function activeTab() {
@@ -106,50 +110,8 @@ async function hasOffscreenDocument() {
   return offscreenExists();
 }
 
-/**
- * Open the tab stream once and share it between the capture modes. While the
- * stream for a tab is still alive every caller gets the same promise.
- */
-function ensureStream(tabId) {
-  if (streamTabId === tabId && streamReady) return streamReady;
-
-  streamTabId = tabId;
-  streamReady = (async () => {
-    await ensureOffscreen();
-    const tab = await chrome.tabs.get(tabId);
-    const streamId = await chrome.tabCapture.getMediaStreamId({
-      targetTabId: tabId,
-    });
-    const initialSize = { width: tab.width, height: tab.height };
-    const result = await toOffscreen({
-      type: "initialize-stream",
-      streamId,
-      initialSize,
-    });
-    if (!result?.ok) {
-      throw new Error(result?.error || "Could not start the tab stream.");
-    }
-    return tabId;
-  })();
-
-  streamReady.catch(() => {
-    streamTabId = null;
-    streamReady = null;
-  });
-  return streamReady;
-}
-
-/** Drop the shared stream and the offscreen document that holds it. */
+/** Release the offscreen document once nothing is floating any more. */
 async function stopTabStream() {
-  streamTabId = null;
-  streamReady = null;
-  try {
-    if (await hasOffscreenDocument()) {
-      await toOffscreen({ type: "stop" });
-    }
-  } catch (error) {
-    console.warn("[PiPDesk] offscreen stop failed", error);
-  }
   await closeOffscreen();
 }
 
@@ -157,56 +119,28 @@ async function stopTabStream() {
 
 async function startFullTabPip() {
   const tab = await activeTab();
-  state = { capturing: true, mode: "full", tabId: tab.id, selecting: false };
-  broadcast();
-  try {
-    await ensureStream(tab.id);
-    const result = await toOffscreen({ type: "start-full-pip" });
-    if (!result?.ok) throw new Error(result?.error || "PiP was refused.");
-  } catch (error) {
-    state = { ...IDLE_STATE };
-    broadcast();
-    throw error;
-  }
-  return { ok: true, state };
+  return createSource("full", null, null, tab.id);
 }
 
 async function startRegionSelection() {
   const tab = await activeTab();
   await ensureContentScript(tab.id);
-  state = { capturing: false, mode: "region", tabId: tab.id, selecting: true };
-  broadcast();
+  selecting = true;
+  await broadcast();
   const response = await chrome.tabs.sendMessage(tab.id, {
     type: "select-region",
   });
   if (!response?.ok) {
-    state = { ...IDLE_STATE };
-    broadcast();
+    selecting = false;
+    await broadcast();
     throw new Error(response?.error || "Could not start region selection.");
   }
-  return { ok: true, state };
+  return { ok: true };
 }
 
 async function beginRegionCapture({ rect, viewport }, sender) {
-  const tabId = sender.tab?.id;
-  if (tabId === undefined) throw new Error("Lost track of the source tab.");
-
-  state = { capturing: true, mode: "region", tabId, selecting: false };
-  broadcast();
-  try {
-    await ensureStream(tabId);
-    const result = await toOffscreen({
-      type: "start-custom-pip",
-      rect,
-      viewport,
-    });
-    if (!result?.ok) throw new Error(result?.error || "PiP was refused.");
-  } catch (error) {
-    state = { ...IDLE_STATE };
-    broadcast();
-    throw error;
-  }
-  return { ok: true, state };
+  selecting = false;
+  return createSource("region", rect, viewport, sender.tab?.id);
 }
 
 async function startVideoPip() {
@@ -222,18 +156,79 @@ async function startVideoPip() {
 }
 
 /** Both video paths end here: the page owns that picture-in-picture window. */
-async function enterVideoState(tabId) {
-  // A page-owned window needs no tab stream, so release it.
-  await stopTabStream();
-  state = { capturing: false, mode: "video", tabId, selecting: false };
-  broadcast();
-  return { ok: true, state };
+async function enterVideoState() {
+  await broadcast();
+  return { ok: true };
 }
 
-/** The popup already opened the page's own window: just record and clean up. */
+/** The popup already opened the page's own window: just refresh the popup. */
 async function markVideoPipStarted() {
-  const tab = await activeTab();
-  return enterVideoState(tab.id);
+  await broadcast();
+  return { ok: true };
+}
+
+/* --- floating sources ----------------------------------------------- */
+
+let nextSourceId = 0;
+
+/** A stream id can only be consumed once, so each source asks for its own. */
+async function createStreamId(tabId) {
+  await ensureOffscreen();
+  const tab = await chrome.tabs.get(tabId);
+  const streamId = await chrome.tabCapture.getMediaStreamId({
+    targetTabId: tabId,
+  });
+  return { streamId, initialSize: { width: tab.width, height: tab.height } };
+}
+
+/** One floating source: its own stream, its own tile in the shared window. */
+async function createSource(kind, rect, viewport, tabId) {
+  const shown = await listSources();
+  if (shown.length >= MAX_SOURCES) {
+    throw new Error(`Up to ${MAX_SOURCES} floating sources are supported.`);
+  }
+
+  const tab =
+    tabId === undefined ? await activeTab() : await chrome.tabs.get(tabId);
+  const sourceId = `source-${(nextSourceId += 1)}`;
+  const { streamId, initialSize } = await createStreamId(tab.id);
+
+  const result = await toOffscreen({
+    type: "create-source",
+    sourceId,
+    kind,
+    streamId,
+    initialSize,
+    rect: rect || null,
+    viewport: viewport || null,
+    tabId: tab.id,
+    title: tab.title || "",
+  });
+  if (!result?.ok) throw new Error(result?.error || "PiP was refused.");
+
+  await broadcast();
+  return { ok: true, sourceId };
+}
+
+/** The offscreen document owns the list, so ask it instead of caching one. */
+async function listSources() {
+  if (!(await hasOffscreenDocument())) return [];
+  try {
+    const result = await toOffscreen({ type: "list-sources" });
+    return result?.sources || [];
+  } catch (error) {
+    return [];
+  }
+}
+
+/** Stop every floating source, then release the offscreen document. */
+async function stopAllSources() {
+  for (const source of await listSources()) {
+    await toOffscreen({ type: "stop-source", sourceId: source.id });
+  }
+  await stopTabStream();
+  await broadcast();
+  return { ok: true };
 }
 
 /** Ask the tab whether it holds a video the browser could float. */
@@ -254,34 +249,31 @@ async function checkVideo() {
 
 async function cancelRegionSelection() {
   // A cancel that arrives after the capture started must not end the session.
-  if (state.capturing) return { ok: true, state };
+  if (!selecting) return { ok: true };
 
-  if (state.tabId !== null) {
-    try {
-      await chrome.tabs.sendMessage(state.tabId, { type: "cancel-selection" });
-    } catch (error) {
-      /* tab closed or never injected */
-    }
-  }
-  state = { ...IDLE_STATE };
-  broadcast();
-  return { ok: true, state };
+  selecting = false;
+  await broadcast();
+  return { ok: true };
 }
 
-async function stopPip() {
-  await stopTabStream();
-
-  if (state.tabId !== null) {
-    try {
-      await chrome.tabs.sendMessage(state.tabId, { type: "teardown" });
-    } catch (error) {
-      /* nothing listening any more */
-    }
+async function stopPip(sourceId) {
+  // One row in the popup stops only that source.
+  if (sourceId) {
+    await toOffscreen({ type: "stop-source", sourceId });
+    await broadcast();
+    return { ok: true };
   }
 
-  state = { ...IDLE_STATE };
-  broadcast();
-  return { ok: true, state };
+  selecting = false;
+  await stopAllSources();
+
+  try {
+    const tab = await activeTab();
+    await chrome.tabs.sendMessage(tab.id, { type: "teardown" });
+  } catch (error) {
+    /* nothing listening any more */
+  }
+  return { ok: true };
 }
 
 /* --- panels --------------------------------------------------------- */
@@ -352,7 +344,12 @@ async function handle(message, sender) {
 
   switch (message?.type) {
     case "get-state":
-      return { ok: true, state, error: lastError };
+      return {
+        ok: true,
+        sources: await listSources(),
+        selecting,
+        error: lastError,
+      };
 
     case "start-full-pip":
       return startFullTabPip();
@@ -375,24 +372,29 @@ async function handle(message, sender) {
     case "check-video":
       return checkVideo();
 
+    case "float-site-status":
+      return floatSiteStatus(message.origin);
+
+    case "float-site-toggle":
+      return floatSiteToggle(message.origin, Boolean(message.on));
+
     case "stop-pip":
-      return stopPip();
+      return stopPip(message.sourceId);
 
     case "open-panel":
       return openPanel(message.page);
 
     case "pip-exited":
-      state = { ...IDLE_STATE };
+      selecting = false;
       await stopTabStream();
-      broadcast();
-      return { ok: true, state };
+      await broadcast();
+      return { ok: true };
 
     case "offscreen-error":
       console.error("[PiPDesk] offscreen:", message.message);
       lastError = message.message;
-      state = { ...IDLE_STATE };
       await stopTabStream();
-      broadcast();
+      await broadcast();
       chrome.runtime
         .sendMessage({ type: "alert", message: message.message })
         .catch(() => {});
@@ -428,6 +430,116 @@ chrome.runtime.onInstalled.addListener(async () => {
     await chrome.storage.local.set({ settings: { syncEnabled: false } });
   }
 });
+
+/* --- float button per site ------------------------------------------ */
+
+const FLOAT_SCRIPT_PREFIX = "pipdesk-float-";
+
+async function getSettings() {
+  const { settings } = await chrome.storage.local.get("settings");
+  return { syncEnabled: false, floatOrigins: [], ...(settings || {}) };
+}
+
+async function setSettings(patch) {
+  const next = { ...(await getSettings()), ...patch };
+  await chrome.storage.local.set({ settings: next });
+  return next;
+}
+
+/** Content-script ids only take letters, digits and a few separators. */
+function floatScriptId(origin) {
+  return `${FLOAT_SCRIPT_PREFIX}${origin.replace(/[^a-z0-9]/gi, "_")}`;
+}
+
+async function registerFloatScript(origin) {
+  const id = floatScriptId(origin);
+  const existing = await chrome.scripting.getRegisteredContentScripts({
+    ids: [id],
+  });
+  if (existing.length) return;
+  await chrome.scripting.registerContentScripts([
+    {
+      id,
+      matches: [`${origin}/*`],
+      js: ["content/float-control.js"],
+      runAt: "document_idle",
+    },
+  ]);
+}
+
+async function unregisterFloatScript(origin) {
+  const id = floatScriptId(origin);
+  const existing = await chrome.scripting.getRegisteredContentScripts({
+    ids: [id],
+  });
+  if (!existing.length) return;
+  await chrome.scripting.unregisterContentScripts({ ids: [id] });
+}
+
+/**
+ * Keep the stored origins, the granted permissions and the registered scripts
+ * in step: a permission revoked at chrome://extensions must also drop the
+ * origin, or the popup would claim a site is on while its pages show nothing.
+ */
+async function syncFloatScripts() {
+  const settings = await getSettings();
+  const allowed = [];
+
+  for (const origin of settings.floatOrigins) {
+    const granted = await chrome.permissions.contains({
+      origins: [`${origin}/*`],
+    });
+    if (!granted) continue;
+    allowed.push(origin);
+    await registerFloatScript(origin);
+  }
+
+  if (allowed.length !== settings.floatOrigins.length) {
+    await setSettings({ floatOrigins: allowed });
+  }
+
+  const registered = await chrome.scripting.getRegisteredContentScripts();
+  const wanted = new Set(allowed.map(floatScriptId));
+  const stale = registered
+    .filter(
+      (script) =>
+        script.id.startsWith(FLOAT_SCRIPT_PREFIX) && !wanted.has(script.id),
+    )
+    .map((script) => script.id);
+  if (stale.length) {
+    await chrome.scripting.unregisterContentScripts({ ids: stale });
+  }
+}
+
+async function floatSiteStatus(origin) {
+  if (!origin) throw new Error("No site to check.");
+  const settings = await getSettings();
+  return {
+    ok: true,
+    origin,
+    enabled: settings.floatOrigins.includes(origin),
+  };
+}
+
+async function floatSiteToggle(origin, on) {
+  if (!origin) throw new Error("No site to change.");
+  const settings = await getSettings();
+  const origins = new Set(settings.floatOrigins);
+
+  if (on) {
+    await registerFloatScript(origin);
+    origins.add(origin);
+  } else {
+    await unregisterFloatScript(origin);
+    origins.delete(origin);
+  }
+
+  await setSettings({ floatOrigins: [...origins] });
+  return { ok: true, origin, enabled: Boolean(on) };
+}
+
+chrome.runtime.onInstalled.addListener(syncFloatScripts);
+chrome.runtime.onStartup.addListener(syncFloatScripts);
 
 /* --- page context menu ---------------------------------------------- */
 
@@ -475,31 +587,31 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
 });
 
 /**
- * The popup holds a port open, which keeps the worker alive for the session
- * and gives us the moment to prepare the tab stream before a capture mode is
- * picked. Closing the popup with nothing floating releases it again.
+ * The popup holds a port open, which keeps the worker alive for the session.
+ * Closing it with nothing floating releases the offscreen document again.
  */
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "popup") return;
 
-  activeTab()
-    .then((tab) => ensureStream(tab.id))
-    .catch((error) => {
-      // A page that refuses capture must not break the popup: the capture
-      // buttons ask for the stream again and report the real error.
-      console.warn("[PiPDesk] stream warm-up skipped", error);
-    });
-
-  port.onDisconnect.addListener(() => {
-    // A capture window or a running selection must survive the popup closing.
-    if (state.capturing || state.selecting) return;
-    // The page owns its own video window, so keep reporting it as floating.
-    if (state.mode !== "video") {
-      state = { ...IDLE_STATE };
-      broadcast();
-    }
-    stopTabStream();
+  port.onDisconnect.addListener(async () => {
+    // A running selection or a floating source must survive the popup closing.
+    if (selecting) return;
+    if ((await listSources()).length > 0) return;
+    await stopTabStream();
+    await broadcast();
   });
+});
+
+/** A closed tab takes its floating sources with it. */
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  const mine = (await listSources()).filter(
+    (source) => source.tabId === tabId,
+  );
+  if (!mine.length) return;
+  for (const source of mine) {
+    await toOffscreen({ type: "stop-source", sourceId: source.id });
+  }
+  await broadcast();
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {

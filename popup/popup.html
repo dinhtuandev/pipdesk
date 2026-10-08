@@ -53,6 +53,15 @@
             <span class="action__hint" id="stop-hint">Nothing is floating yet</span>
           </span>
         </button>
+
+        <div class="sources" id="source-list"></div>
+
+        <button class="action action--stop" id="stop-all" type="button" hidden>
+          <span class="action__text">
+            <span class="action__title">Stop all</span>
+            <span class="action__hint">Close every floating source</span>
+          </span>
+        </button>
       </div>
     </section>
 
@@ -77,6 +86,11 @@
     <p class="note" id="note" role="status"></p>
 
     <footer class="foot">
+      <label class="switch">
+        <input type="checkbox" id="float-site" />
+        <span class="switch__track" aria-hidden="true"><span class="switch__knob"></span></span>
+        <span class="switch__label">Float button on this site</span>
+      </label>
       <label class="switch">
         <input type="checkbox" id="sync" />
         <span class="switch__track" aria-hidden="true"><span class="switch__knob"></span></span>

@@ -27,6 +27,7 @@ if (!window.__pipDeskContentScript) {
 
   let ui = null;
   let rect = null;
+  let hoverRect = null;
 
   /* --- selection overlay -------------------------------------------- */
 
@@ -61,6 +62,12 @@ if (!window.__pipDeskContentScript) {
     hole.setAttribute(
       "style",
       `position:absolute;display:none;border:1px solid ${PALETTE.accent};border-radius:4px;box-shadow:0 0 0 100vmax ${PALETTE.scrim};pointer-events:none`,
+    );
+
+    const hover = document.createElement("div");
+    hover.setAttribute(
+      "style",
+      `position:absolute;display:none;border:1px dashed ${PALETTE.accent};border-radius:4px;pointer-events:none`,
     );
 
     const hint = document.createElement("div");
@@ -112,10 +119,10 @@ if (!window.__pipDeskContentScript) {
     // The action bar sits beside the overlay, not inside it: a press on a
     // button must never be read as the start of a new selection. It also has
     // to paint above the overlay, or the overlay swallows the click.
-    host.append(hole, hint);
+    host.append(hole, hover, hint);
     document.documentElement.append(host, bar);
 
-    return { host, hole, hint, bar, size, accept, cancel };
+    return { host, hole, hover, hint, bar, size, accept, cancel };
   }
 
   function paint() {
@@ -155,19 +162,74 @@ if (!window.__pipDeskContentScript) {
     };
   }
 
+  /**
+   * The page element under a point. The overlay covers the whole page, so it
+   * has to step out of hit testing for the instant it asks what is below.
+   */
+  function elementAt(point) {
+    ui.host.style.pointerEvents = "none";
+    const node = document.elementFromPoint(point.x, point.y);
+    ui.host.style.pointerEvents = "";
+    if (!node || node === document.body || node === document.documentElement) {
+      return null;
+    }
+    if (node.closest(`#${OVERLAY_ID}`) || ui.bar.contains(node)) return null;
+    return node;
+  }
+
+  /** Outline the box a click would take. */
+  function paintHover(node) {
+    if (!ui) return;
+
+    if (!node) {
+      ui.hover.style.display = "none";
+      hoverRect = null;
+      return;
+    }
+
+    const bounds = node.getBoundingClientRect();
+    const width = Math.min(bounds.width, window.innerWidth);
+    const height = Math.min(bounds.height, window.innerHeight);
+    if (width < 1 || height < 1) {
+      ui.hover.style.display = "none";
+      hoverRect = null;
+      return;
+    }
+
+    hoverRect = {
+      x: Math.round(Math.max(0, bounds.left)),
+      y: Math.round(Math.max(0, bounds.top)),
+      width: Math.round(width),
+      height: Math.round(height),
+    };
+    ui.hover.style.display = "block";
+    ui.hover.style.left = `${hoverRect.x}px`;
+    ui.hover.style.top = `${hoverRect.y}px`;
+    ui.hover.style.width = `${hoverRect.width}px`;
+    ui.hover.style.height = `${hoverRect.height}px`;
+  }
+
   function onPointerDown(event) {
     if (!ui || event.button !== 0) return;
     if (ui.bar.contains(event.target)) return;
     const point = pointFrom(event);
     rect = { x: point.x, y: point.y, width: 0, height: 0 };
     ui.start = point;
+    ui.hover.style.display = "none";
     ui.host.setPointerCapture(event.pointerId);
     paint();
   }
 
   function onPointerMove(event) {
-    if (!ui || !ui.start) return;
+    if (!ui) return;
     const point = pointFrom(event);
+
+    if (!ui.start) {
+      // Element picking: outline the box a click would take.
+      paintHover(elementAt(point));
+      return;
+    }
+
     rect = {
       x: Math.min(ui.start.x, point.x),
       y: Math.min(ui.start.y, point.y),
@@ -181,6 +243,14 @@ if (!window.__pipDeskContentScript) {
     if (!ui || !ui.start) return;
     ui.start = null;
     ui.host.releasePointerCapture?.(event.pointerId);
+
+    // A click rather than a drag: take the element that was outlined instead
+    // of leaving behind a rectangle too small to use.
+    const dragged = rect;
+    const tooSmall =
+      !dragged || dragged.width < MIN_SIDE || dragged.height < MIN_SIDE;
+    if (tooSmall && hoverRect) rect = { ...hoverRect };
+    paint();
   }
 
   function sendSelection() {
@@ -195,7 +265,52 @@ if (!window.__pipDeskContentScript) {
     teardown("commit");
   }
 
+  /** Arrow keys move the pending rectangle; Ctrl with the arrows resizes it. */
+  function nudgeRect(event) {
+    if (!ui || !rect) return false;
+
+    const step = event.shiftKey ? 10 : 1;
+    const key = event.key;
+    const next = { ...rect };
+
+    if (event.ctrlKey && (key === "ArrowLeft" || key === "ArrowRight")) {
+      next.width += key === "ArrowRight" ? step : -step;
+    } else if (event.ctrlKey && (key === "ArrowUp" || key === "ArrowDown")) {
+      next.height += key === "ArrowDown" ? step : -step;
+    } else if (key === "ArrowLeft") {
+      next.x -= step;
+    } else if (key === "ArrowRight") {
+      next.x += step;
+    } else if (key === "ArrowUp") {
+      next.y -= step;
+    } else if (key === "ArrowDown") {
+      next.y += step;
+    } else {
+      return false;
+    }
+
+    next.width = Math.max(MIN_SIDE, next.width);
+    next.height = Math.max(MIN_SIDE, next.height);
+    next.x = Math.min(
+      Math.max(0, next.x),
+      Math.max(0, window.innerWidth - next.width),
+    );
+    next.y = Math.min(
+      Math.max(0, next.y),
+      Math.max(0, window.innerHeight - next.height),
+    );
+
+    rect = next;
+    paint();
+    return true;
+  }
+
   function onKeyDown(event) {
+    if (nudgeRect(event)) {
+      event.preventDefault();
+      return;
+    }
+
     if (event.key === "Escape") {
       event.preventDefault();
       teardown("cancel");
@@ -220,6 +335,7 @@ if (!window.__pipDeskContentScript) {
     ui.bar.remove();
     ui = null;
     rect = null;
+    hoverRect = null;
   }
 
   /**

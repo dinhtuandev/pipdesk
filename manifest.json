@@ -24,10 +24,11 @@
   "content_scripts": [
     {
       "matches": ["https://www.youtube.com/*"],
-      "js": ["content/youtube.js"],
+      "js": ["content/float-control.js", "content/youtube.js"],
       "run_at": "document_idle"
     }
   ],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
   "permissions": [
     "activeTab",
     "tabCapture",
