@@ -37,7 +37,7 @@ Tổng hợp vào bảng ở mục 14.
 - Kỳ vọng: có bộ chọn mode `Tab` / `Video` với `Tab` đang được chọn, và **một**
   nút hành động ghi `Whole tab` / `Everything on the page`; nút `Selected region`
   vẫn riêng một nút; `Stop PiP` không hiện; ô note trống; góc dưới phải hiện
-  `v0.1.0`; công tắc `Sync across devices` đang tắt.
+  `v0.2.0`; công tắc `Sync across devices` đang tắt.
 - Neo: `popup/popup.js` — `setPipMode("tab")` lúc mở popup, `render()` với
   `state` rỗng cho `live = false`, `updateToggleState()` khoá mode `Video` khi
   trang không có video; `loadSyncSwitch()` đọc `syncEnabled` mặc định `false`
@@ -218,6 +218,43 @@ Tổng hợp vào bảng ở mục 14.
   trạng thái chờ.
 - Neo: `content/content.js` — `nudgeRect()` gọi trong `onKeyDown`;
   `clearSelection()` xoá cả `hoverRect`.
+
+## Nhóm J — Ba tab, nhãn nguồn, nhịp khung và nhắc hạn
+
+### TC-J1 — Ba tab trong popup (Capture / Help / Version)
+- Thao tác: mở popup, bấm lần lượt `Help`, `Version`, rồi quay lại `Capture`.
+- Kỳ vọng: mở lên đang ở `Capture`; `Help` hiện danh sách cách dùng; `Version`
+  hiện tên extension, `v0.2.0` và tác giả; quay lại `Capture` thì bộ chọn mode
+  cùng danh sách nguồn vẫn chạy bình thường.
+- Neo: `popup/popup.html` — ba nút `#tab-*` cộng ba vùng `#view-*`;
+  `popup/popup.js` — `setTab()` chỉ đổi `hidden`, `loadAbout()` đọc
+  `chrome.runtime.getManifest()`.
+
+### TC-J2 — Nhãn nguồn trong cửa sổ
+- Thao tác: float hai tab khác nhau cùng lúc, rồi bấm `Show alone` ở một dòng.
+- Kỳ vọng: khi có hai nguồn, mỗi ô có một dải mờ ở đáy mang tiêu đề tab của nó;
+  ở chế độ `Show alone` không còn dải nào.
+- Neo: `offscreen/offscreen.js` — `drawLabel()` đọc `source.title`, `drawFrame()`
+  chỉ gọi khi `!focused` và `sources.size >= 2`.
+
+### TC-J3 — Nhịp khung giảm khi có ba nguồn
+- Thao tác: float hai tab, rồi thêm tab thứ ba.
+- Kỳ vọng: cửa sổ không nháy và không đóng lại khi thêm nguồn thứ ba; hình ở
+  mức 15 khung/giây thay vì 30.
+- Neo: `offscreen/offscreen.js` — `pumpFrames()` dùng
+  `setInterval(drawFrame, 1000 / frameRate(...))` khi có từ ba nguồn;
+  `offscreen/layout.js` — `frameRate()`.
+
+### TC-J4 — Nhắc hạn todo
+- Thao tác: mở panel Todos, thêm một việc có hạn là ngày mai và để yên; sau đó
+  thêm một việc khác có hạn ngày mai rồi tick xong ngay.
+- Kỳ vọng: không có thông báo nào lúc lưu; đúng 09:00 ngày hạn, việc chưa tick
+  bắn thông báo `Todo due today` mang nội dung việc đó, bấm vào thì panel Todos
+  mở ra; việc đã tick không bắn gì.
+- Neo: `panels/todos.js` — `syncReminders()` tạo alarm `todo-<id>` trong
+  `persist()`; `background/service-worker.js` — nhánh `todo-`
+  trong `chrome.alarms.onAlarm` gọi `notifyTodoDue()`, còn
+  `chrome.notifications.onClicked` mở `openPanel("todos")`.
 
 ### TC-C10 — Dùng lại vùng đã chọn cho site
 - Thao tác: chọn một vùng trên site X, đóng popup rồi mở lại ở chính site đó; sau
@@ -675,3 +712,7 @@ không đóng cửa sổ PiP gốc của trang (TC-D4).
 | TC-I7 |  |  |
 | TC-I8 |  |  |
 | TC-I9 |  |  |
+| TC-J1 |  |  |
+| TC-J2 |  |  |
+| TC-J3 |  |  |
+| TC-J4 |  |  |
