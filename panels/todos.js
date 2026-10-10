@@ -37,7 +37,39 @@
     }));
   }
 
-  const persist = () => Store.write(KEY, todos);
+  /* Reminders fire at 09:00 local on the due date. */
+  const REMINDER_HOUR = 9;
+
+  function reminderAt(due) {
+    const when = new Date(`${due}T00:00:00`);
+    if (Number.isNaN(when.getTime())) return null;
+    when.setHours(REMINDER_HOUR, 0, 0, 0);
+    const at = when.getTime();
+    return at > Date.now() ? at : null;
+  }
+
+  /** Keep one alarm per dated, unfinished todo and drop every other one. */
+  async function syncReminders() {
+    const wanted = new Set();
+
+    for (const todo of todos) {
+      if (todo.done || !todo.due) continue;
+      const when = reminderAt(todo.due);
+      if (when === null) continue;
+      const name = `todo-${todo.id}`;
+      wanted.add(name);
+      await chrome.alarms.create(name, { when });
+    }
+
+    for (const alarm of await chrome.alarms.getAll()) {
+      if (alarm.name.startsWith("todo-") && !wanted.has(alarm.name)) {
+        await chrome.alarms.clear(alarm.name);
+      }
+    }
+  }
+
+  const persist = () =>
+    Promise.all([Store.write(KEY, todos), syncReminders()]);
 
   /* Soonest due first, undated last, then oldest created first. */
   function byDueThenCreated(a, b) {

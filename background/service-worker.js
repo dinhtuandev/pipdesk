@@ -676,6 +676,10 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name.startsWith("todo-")) {
+    await notifyTodoDue(alarm.name.slice("todo-".length));
+    return;
+  }
   if (alarm.name !== TIMER_ALARM) return;
 
   const { timer } = await chrome.storage.local.get("timer");
@@ -694,8 +698,30 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   await chrome.storage.local.remove("timerEndsAt");
 });
 
+/** A due date came up: nudge once, unless the todo is gone or already ticked. */
+async function notifyTodoDue(id) {
+  const { todos } = await chrome.storage.local.get("todos");
+  const todo = (Array.isArray(todos) ? todos : []).find(
+    (item) => String(item.id) === String(id),
+  );
+  if (!todo || todo.done) return;
+
+  await chrome.notifications.create(`todo-${id}`, {
+    type: "basic",
+    iconUrl: "icons/icon128.png",
+    title: "Todo due today",
+    message: todo.text || "A todo you dated is due.",
+    priority: 2,
+  });
+}
+
 chrome.notifications.onClicked.addListener((notificationId) => {
   if (notificationId === TIMER_ALARM) {
     chrome.notifications.clear(TIMER_ALARM);
+    return;
+  }
+  if (notificationId.startsWith("todo-")) {
+    chrome.notifications.clear(notificationId);
+    openPanel("todos").catch(() => {});
   }
 });
