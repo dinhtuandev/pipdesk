@@ -588,6 +588,24 @@ function buildContextMenu() {
 chrome.runtime.onInstalled.addListener(buildContextMenu);
 chrome.runtime.onStartup.addListener(buildContextMenu);
 
+/* --- keyboard commands ---------------------------------------------- */
+
+/**
+ * These call exactly what the popup buttons and the page menus call. Video
+ * mode has no command on purpose: its picture-in-picture request must come
+ * from the popup, the only context that still holds the click's activation.
+ */
+chrome.commands.onCommand.addListener(async (command) => {
+  try {
+    if (command === "float-tab") await startFullTabPip();
+    if (command === "float-region") await startRegionSelection();
+    if (command === "stop-all") await stopPip();
+  } catch (error) {
+    lastError = String(error?.message || error);
+    console.error("[PiPDesk] command", command, error);
+  }
+});
+
 chrome.contextMenus.onClicked.addListener(async (info) => {
   try {
     if (info.menuItemId === "pipdesk-float-tab") await startFullTabPip();

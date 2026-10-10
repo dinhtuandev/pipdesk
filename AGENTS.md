@@ -45,7 +45,8 @@ reload the tab you are testing.
 - A picture-in-picture request only succeeds from a context that still holds the
   click's user activation. Calls that travel popup → service worker → content
   script lose it and Chrome answers `NotAllowedError`, which is why the popup
-  and the YouTube control call `video.requestPictureInPicture()` themselves.
+  and the YouTube control call `video.requestPictureInPicture()` themselves, and
+  why the `commands` shortcuts cover tab, region and stop but never video mode.
 - One document tree can only hold one picture-in-picture window: a second request
   from the offscreen document or one of its iframes replaces the first (measured,
   TC-I2). Several sources therefore share a single canvas in
