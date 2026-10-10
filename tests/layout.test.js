@@ -12,6 +12,7 @@ const {
   TILE_WIDTH,
   TILE_HEIGHT,
   slots,
+  frameRate,
 } = require("../offscreen/layout.js");
 
 const CENTRED_Y = Math.round((FULL_HEIGHT - TILE_HEIGHT) / 2);
@@ -74,6 +75,20 @@ test("three and four sources use the two-by-two grid", () => {
       [TILE_WIDTH, TILE_HEIGHT],
     ],
   );
+});
+
+test("the draw rate halves once a third source joins", () => {
+  assert.equal(frameRate(1), 30);
+  assert.equal(frameRate(2), 30);
+  assert.equal(frameRate(3), 15);
+  assert.equal(frameRate(4), 15);
+});
+
+test("the draw rate stays inside a usable range", () => {
+  for (const count of [0, 1, 2, 3, 4]) {
+    const rate = frameRate(count);
+    assert.ok(rate > 0 && rate <= 60, `rate in range (${count})`);
+  }
 });
 
 test("every slot stays inside the canvas", () => {

@@ -33,7 +33,23 @@
     }));
   }
 
-  const api = { FULL_WIDTH, FULL_HEIGHT, TILE_WIDTH, TILE_HEIGHT, slots };
+  /**
+   * Drawing rate for the composite canvas. Every extra source is another tab
+   * stream to decode, so three or four of them run at half rate instead of
+   * paying full price for every frame.
+   */
+  function frameRate(count) {
+    return count >= 3 ? 15 : 30;
+  }
+
+  const api = {
+    FULL_WIDTH,
+    FULL_HEIGHT,
+    TILE_WIDTH,
+    TILE_HEIGHT,
+    slots,
+    frameRate,
+  };
 
   // The page loads this as a plain script; the test runner requires it.
   if (typeof module === "object" && module.exports) module.exports = api;

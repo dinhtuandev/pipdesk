@@ -16,7 +16,7 @@ const compositeContext = compositeCanvas.getContext("2d", { alpha: false });
 const MAX_SOURCES = 4;
 
 /* Layout maths lives in offscreen/layout.js so `node --test` can require it. */
-const { slots } = globalThis.__pipDeskLayout;
+const { slots, frameRate } = globalThis.__pipDeskLayout;
 
 const supportsFrameCallback =
   typeof pipVideo.requestVideoFrameCallback === "function";
@@ -24,6 +24,12 @@ const supportsFrameCallback =
 /* The canvas shares the panel background instead of inventing a colour. */
 const backdrop = getComputedStyle(document.documentElement)
   .getPropertyValue("--bg")
+  .trim();
+const labelPlate = getComputedStyle(document.documentElement)
+  .getPropertyValue("--surface")
+  .trim();
+const labelInk = getComputedStyle(document.documentElement)
+  .getPropertyValue("--text")
   .trim();
 
 const sources = new Map();
@@ -106,6 +112,32 @@ function drawSource(source, slot) {
   );
 }
 
+/** A strip with the source's title, so a grid of tiles stays readable. */
+function drawLabel(source, slot) {
+  const title = (source.title || "").trim();
+  if (!title) return;
+
+  const height = 28;
+  const padding = 10;
+  const baseline = slot.y + slot.height - height / 2;
+
+  compositeContext.save();
+  compositeContext.globalAlpha = 0.72;
+  compositeContext.fillStyle = labelPlate;
+  compositeContext.fillRect(slot.x, slot.y + slot.height - height, slot.width, height);
+  compositeContext.globalAlpha = 1;
+  compositeContext.fillStyle = labelInk;
+  compositeContext.font = "600 14px system-ui, sans-serif";
+  compositeContext.textBaseline = "middle";
+  compositeContext.fillText(
+    title,
+    slot.x + padding,
+    baseline,
+    slot.width - padding * 2,
+  );
+  compositeContext.restore();
+}
+
 function drawFrame() {
   if (backdrop) {
     compositeContext.fillStyle = backdrop;
@@ -114,6 +146,7 @@ function drawFrame() {
 
   const focused = focusedId && sources.has(focusedId) ? focusedId : null;
   const layout = slots(sources.size, Boolean(focused));
+  const labelled = !focused && sources.size >= 2;
 
   if (focused) {
     // Focused means "this one alone"; the others keep decoding behind it.
@@ -123,7 +156,9 @@ function drawFrame() {
 
   let index = 0;
   for (const source of sources.values()) {
-    drawSource(source, layout[index] || layout[layout.length - 1]);
+    const slot = layout[index] || layout[layout.length - 1];
+    drawSource(source, slot);
+    if (labelled) drawLabel(source, slot);
     index += 1;
   }
 }
@@ -139,7 +174,10 @@ function stopFrameLoop() {
 
 function pumpFrames() {
   stopFrameLoop();
-  if (supportsFrameCallback) {
+
+  // One or two sources follow the video's own cadence; three or four fall back
+  // to a timer, so the extra decoding never runs at full rate.
+  if (supportsFrameCallback && sources.size <= 2) {
     const step = () => {
       drawFrame();
       frameHandle = pipVideo.requestVideoFrameCallback(step);
@@ -147,7 +185,7 @@ function pumpFrames() {
     frameHandle = pipVideo.requestVideoFrameCallback(step);
     return;
   }
-  fallbackTimer = setInterval(drawFrame, 33);
+  fallbackTimer = setInterval(drawFrame, Math.round(1000 / frameRate(sources.size)));
 }
 
 function releaseSource(entry) {
@@ -222,6 +260,9 @@ async function createSource(message) {
     pumpFrames();
     await waitForData(pipVideo);
     await pipVideo.requestPictureInPicture();
+  } else {
+    // The canvas stream stays as it is; only the draw rate reacts to the count.
+    pumpFrames();
   }
 
   return { ok: true, sourceId };
@@ -264,6 +305,7 @@ async function stopSource(message) {
   if (focusedId === sourceId) focusedId = null;
 
   if (sources.size > 0) {
+    pumpFrames();
     drawFrame();
     return { ok: true };
   }
