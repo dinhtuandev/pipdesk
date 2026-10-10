@@ -116,7 +116,7 @@ function sourceLabel(source) {
   return title ? `${title} — ${kind}` : kind;
 }
 
-/** One row per floating source, each with its own stop button. */
+/** One row per floating source: focus it, or stop it. */
 function renderSources(sources) {
   els.sourceList.replaceChildren();
 
@@ -128,6 +128,19 @@ function renderSources(sources) {
     label.className = "source__label";
     label.textContent = sourceLabel(source);
 
+    const focus = document.createElement("button");
+    focus.type = "button";
+    focus.className = "source__focus";
+    focus.textContent = source.focused ? "Back to grid" : "Show alone";
+    focus.addEventListener("click", async () => {
+      focus.disabled = true;
+      await send({
+        type: "focus-source",
+        sourceId: source.focused ? null : source.id,
+      });
+      await loadState();
+    });
+
     const stop = document.createElement("button");
     stop.type = "button";
     stop.className = "source__stop";
@@ -138,7 +151,7 @@ function renderSources(sources) {
       await loadState();
     });
 
-    row.append(label, stop);
+    row.append(label, focus, stop);
     els.sourceList.appendChild(row);
   }
 

@@ -14,6 +14,8 @@ reload the tab you are testing.
   state, the offscreen document lifecycle, panel windows and the timer alarm.
 - `offscreen/` — `chrome.tabCapture` stream decoding, region cropping, and
   promotion of a video element into picture-in-picture.
+- `offscreen/layout.js` — where each source sits on the composite canvas. Pure
+  on purpose: `tests/layout.test.js` covers it with `node --test`.
 - `content/content.js` — injected on demand by the service worker. Region
   selection overlay plus native video PiP. Never declared in the manifest.
 - `content/youtube.js` — the one declared content script. Puts the Quick PiP
@@ -59,6 +61,7 @@ reload the tab you are testing.
 ```bash
 for f in $(find . -name '*.js' -not -path './node_modules/*'); do node --check "$f" || exit 1; done
 node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8'))"
+node --test                # layout maths lives in tests/*.test.js
 python tools/make-icons.py   # only when the icon artwork changes
 ```
 

@@ -221,6 +221,16 @@ async function listSources() {
   }
 }
 
+/** Show one source alone, or pass `null` to go back to the grid. */
+async function focusSource(sourceId) {
+  const result = await toOffscreen({
+    type: "focus-source",
+    sourceId: sourceId || null,
+  });
+  await broadcast();
+  return result;
+}
+
 /** Stop every floating source, then release the offscreen document. */
 async function stopAllSources() {
   for (const source of await listSources()) {
@@ -377,6 +387,9 @@ async function handle(message, sender) {
 
     case "float-site-toggle":
       return floatSiteToggle(message.origin, Boolean(message.on));
+
+    case "focus-source":
+      return focusSource(message.sourceId);
 
     case "stop-pip":
       return stopPip(message.sourceId);

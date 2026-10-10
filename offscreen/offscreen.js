@@ -14,10 +14,9 @@ const pipVideo = document.getElementById("pip-video");
 const compositeContext = compositeCanvas.getContext("2d", { alpha: false });
 
 const MAX_SOURCES = 4;
-const FULL_WIDTH = 1280;
-const FULL_HEIGHT = 720;
-const TILE_WIDTH = 640;
-const TILE_HEIGHT = 360;
+
+/* Layout maths lives in offscreen/layout.js so `node --test` can require it. */
+const { slots } = globalThis.__pipDeskLayout;
 
 const supportsFrameCallback =
   typeof pipVideo.requestVideoFrameCallback === "function";
@@ -32,6 +31,8 @@ let canvasStream = null;
 let frameHandle = null;
 let fallbackTimer = null;
 let closing = false;
+/* Either null, or the id of a source that is still in `sources`. */
+let focusedId = null;
 
 /* --- helpers -------------------------------------------------------- */
 
@@ -60,22 +61,7 @@ function waitForData(video) {
   });
 }
 
-/** Where each source sits on the canvas: 1 fills it, 2 split, 3-4 grid. */
-function slots() {
-  const count = sources.size;
-  if (count <= 1) {
-    return [{ x: 0, y: 0, width: FULL_WIDTH, height: FULL_HEIGHT }];
-  }
-
-  const columns = 2;
-  const offsetY = count <= 2 ? Math.round((FULL_HEIGHT - TILE_HEIGHT) / 2) : 0;
-  return Array.from({ length: count }, (unused, index) => ({
-    x: (index % columns) * TILE_WIDTH,
-    y: offsetY + Math.floor(index / columns) * TILE_HEIGHT,
-    width: TILE_WIDTH,
-    height: TILE_HEIGHT,
-  }));
-}
+/* `slots()` comes from offscreen/layout.js. */
 
 /** Paint one source into its slot, letterboxed so nothing is stretched. */
 function drawSource(source, slot) {
@@ -126,7 +112,15 @@ function drawFrame() {
     compositeContext.fillRect(0, 0, compositeCanvas.width, compositeCanvas.height);
   }
 
-  const layout = slots();
+  const focused = focusedId && sources.has(focusedId) ? focusedId : null;
+  const layout = slots(sources.size, Boolean(focused));
+
+  if (focused) {
+    // Focused means "this one alone"; the others keep decoding behind it.
+    drawSource(sources.get(focused), layout[0]);
+    return;
+  }
+
   let index = 0;
   for (const source of sources.values()) {
     drawSource(source, layout[index] || layout[layout.length - 1]);
@@ -247,6 +241,7 @@ async function stopAll() {
 
   for (const entry of sources.values()) releaseSource(entry);
   sources.clear();
+  focusedId = null;
 
   if (canvasStream) {
     for (const track of canvasStream.getTracks()) track.stop();
@@ -265,12 +260,22 @@ async function stopSource(message) {
 
   releaseSource(entry);
   sources.delete(sourceId);
+  // A focus pointing at a gone source would leave the canvas blank.
+  if (focusedId === sourceId) focusedId = null;
 
   if (sources.size > 0) {
     drawFrame();
     return { ok: true };
   }
   return stopAll();
+}
+
+/** Show one source alone, or pass `null` to go back to the grid. */
+function focusSource(message) {
+  const wanted = message.sourceId;
+  focusedId = wanted && sources.has(wanted) ? wanted : null;
+  drawFrame();
+  return { ok: true, focused: focusedId };
 }
 
 function listSources() {
@@ -281,6 +286,7 @@ function listSources() {
       kind: entry.kind,
       tabId: entry.tabId,
       title: entry.title,
+      focused: id === focusedId,
     })),
   };
 }
@@ -290,6 +296,7 @@ function listSources() {
 const TASKS = {
   "create-source": createSource,
   "stop-source": stopSource,
+  "focus-source": focusSource,
   "list-sources": listSources,
 };
 

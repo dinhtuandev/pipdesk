@@ -535,6 +535,23 @@ cùng vẽ vào một canvas và cùng nổi trong một cửa sổ.
 - Kỳ vọng: cả hai ô vẫn vẽ, chỉ báo chia sẻ tab vẫn còn.
 - Neo: `onDisconnect` chỉ giải phóng offscreen document khi không còn nguồn nào.
 
+### TC-I8 — Nguồn tiêu điểm chiếm trọn khung
+- Thao tác: đang có hai nguồn, bấm `Show alone` ở một dòng trong popup.
+- Kỳ vọng: cửa sổ chỉ còn nguồn đó ở 1280×720, các nguồn khác vẫn nằm trong danh
+  sách; nút của dòng đó đổi thành `Back to grid`.
+- Neo: `offscreen/offscreen.js` — `focusSource()` đặt `focusedId` rồi `drawFrame()`
+  vẽ theo `slots(count, true)`; `list-sources` trả `focused` cho đúng nguồn đó;
+  `popup/popup.js` — `renderSources()` đổi nhãn nút theo `source.focused`.
+
+### TC-I9 — Bỏ tiêu điểm và dừng nguồn đang tiêu điểm
+- Thao tác: bấm `Back to grid`, sau đó đặt tiêu điểm lại rồi bấm `Stop` ở đúng
+  dòng đang tiêu điểm.
+- Kỳ vọng: lần đầu lưới trở lại như cũ; lần sau cửa sổ vẽ các nguồn còn lại theo
+  lưới, và nếu đó là nguồn cuối cùng thì cửa sổ đóng hẳn.
+- Neo: `offscreen/offscreen.js` — `stopSource()` đặt `focusedId = null` khi id
+  trùng, `stopAll()` luôn đặt `null`, nên tiêu điểm không bao giờ trỏ vào nguồn
+  đã gỡ.
+
 ## 12. Lệnh kiểm tra bằng console
 
 Console service worker (`chrome://extensions` → service worker):
@@ -646,3 +663,5 @@ không đóng cửa sổ PiP gốc của trang (TC-D4).
 | TC-I5 |  |  |
 | TC-I6 |  |  |
 | TC-I7 |  |  |
+| TC-I8 |  |  |
+| TC-I9 |  |  |
