@@ -371,6 +371,40 @@ async function loadRegionButton() {
   els.useRegion.hidden = !settings.regions?.[origin];
 }
 
+const TAB_IDS = {
+  capture: ["tab-capture", "view-capture"],
+  help: ["tab-help", "view-help"],
+  version: ["tab-version", "view-version"],
+};
+
+/** The popup shows one view at a time; the capture controls keep their state. */
+function setTab(name) {
+  for (const [key, [buttonId, viewId]] of Object.entries(TAB_IDS)) {
+    const active = key === name;
+    const button = document.getElementById(buttonId);
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", String(active));
+    document.getElementById(viewId).hidden = !active;
+  }
+}
+
+function bindTabs() {
+  for (const [key, [buttonId]] of Object.entries(TAB_IDS)) {
+    document
+      .getElementById(buttonId)
+      .addEventListener("click", () => setTab(key));
+  }
+}
+
+/** Version view straight from the manifest, so it can never drift. */
+function loadAbout() {
+  const manifest = chrome.runtime.getManifest();
+  document.getElementById("about-name").textContent = manifest.name;
+  document.getElementById("about-version").textContent = `v${manifest.version}`;
+  document.getElementById("about-author").textContent =
+    manifest.author || "—";
+}
+
 function bindFloatSwitch() {
   els.floatSite.addEventListener("change", async () => {
     const wanted = els.floatSite.checked;
@@ -432,6 +466,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   bindFloatSwitch();
   await loadFloatSwitch();
   await loadRegionButton();
+  bindTabs();
+  loadAbout();
 
   const response = await send({ type: "get-state" });
   if (response.ok) {

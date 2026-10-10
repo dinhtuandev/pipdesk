@@ -369,3 +369,59 @@ body {
 .source__focus:disabled {
   opacity: 0.5;
 }
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--text-muted);
+}
+
+.tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-xs);
+  padding: 8px 10px;
+}
+
+.tab.is-active {
+  color: var(--text);
+  border-bottom-color: var(--accent-text);
+}
+
+.help {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-dim);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
+.help li + li {
+  margin-top: 8px;
+}
+
+.help code {
+  color: var(--text);
+}
+
+.about {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  font-size: var(--fs-xs);
+}
+
+.about dt {
+  color: var(--text-dim);
+}
+
+.about dd {
+  margin: 0;
+  color: var(--text);
+}

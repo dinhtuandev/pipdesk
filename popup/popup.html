@@ -17,6 +17,14 @@
       <span class="status" id="status" aria-hidden="true"></span>
     </header>
 
+    <nav class="tabs" role="tablist" aria-label="PiPDesk sections">
+      <button class="tab is-active" id="tab-capture" type="button" role="tab" aria-selected="true">Capture</button>
+      <button class="tab" id="tab-help" type="button" role="tab" aria-selected="false">Help</button>
+      <button class="tab" id="tab-version" type="button" role="tab" aria-selected="false">Version</button>
+    </nav>
+
+    <div id="view-capture">
+
     <section class="group">
       <h2 class="group__label">Capture this tab</h2>
       <div class="modes" role="radiogroup" aria-label="Capture mode">
@@ -94,6 +102,33 @@
     </section>
 
     <p class="note" id="note" role="status"></p>
+    </div>
+
+    <section class="group" id="view-help" hidden>
+      <h2 class="group__label">How it works</h2>
+      <ul class="help">
+        <li><b>Capture</b> — pick <code>Tab</code> or <code>Video</code>, then press the big button. <code>Selected region</code> takes a drag or a hover-and-click on one element; the arrow keys nudge the box, <code>Ctrl</code> plus the arrows resizes it, <code>Esc</code> cancels.</li>
+        <li><code>Use last region</code> repeats the box you cut on this site before.</li>
+        <li>Every floating source gets a row: <code>Show alone</code> fills the window with that one, <code>Back to grid</code> returns to the shared layout, <code>Stop</code> removes one, <code>Stop all</code> closes everything.</li>
+        <li>With two or more sources the window draws a label strip under each tile so you can tell them apart.</li>
+        <li>On a video page the control sits in the player bar; left-click floats the video, right-click opens the actions. The same actions live in Chrome's right-click menu.</li>
+        <li><code>Float button on this site</code> puts the badge on the site you are looking at.</li>
+        <li>Shortcuts: <code>Alt+Shift+P</code> floats the tab, <code>Alt+Shift+R</code> starts a region, <code>Alt+Shift+X</code> stops everything. Video mode has no shortcut — that request needs a click.</li>
+        <li>Chrome can open PiP on its own when you leave a playing tab. PiPDesk closes that one again unless you asked for it.</li>
+      </ul>
+    </section>
+
+    <section class="group" id="view-version" hidden>
+      <h2 class="group__label">About</h2>
+      <dl class="about">
+        <dt>Extension</dt>
+        <dd id="about-name">PiPDesk</dd>
+        <dt>Version</dt>
+        <dd id="about-version">—</dd>
+        <dt>Author</dt>
+        <dd id="about-author">—</dd>
+      </dl>
+    </section>
 
     <footer class="foot">
       <label class="switch">
