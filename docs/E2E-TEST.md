@@ -219,6 +219,15 @@ Tổng hợp vào bảng ở mục 14.
 - Neo: `content/content.js` — `nudgeRect()` gọi trong `onKeyDown`;
   `clearSelection()` xoá cả `hoverRect`.
 
+### TC-C10 — Dùng lại vùng đã chọn cho site
+- Thao tác: chọn một vùng trên site X, đóng popup rồi mở lại ở chính site đó; sau
+  đó mở popup ở một site khác chưa từng chọn vùng.
+- Kỳ vọng: ở site X có nút `Use last region`, bấm thì cửa sổ cắt đúng hộp cũ mà
+  không hiện overlay; ở site khác thì nút đó ẩn.
+- Neo: `background/service-worker.js` — `beginRegionCapture()` ghi
+  `settings.regions[origin]`, `startSavedRegion()` tạo nguồn từ hộp đã lưu;
+  `popup/popup.js` — `loadRegionButton()` đọc `Store.getSettings()`.
+
 ## 6. Nhóm D — Video trên trang
 
 ### TC-D1 — Nổi video bằng PiP gốc của trình phát
@@ -629,6 +638,7 @@ không đóng cửa sổ PiP gốc của trang (TC-D4).
 | TC-C7 |  |  |
 | TC-C8 |  |  |
 | TC-C9 |  |  |
+| TC-C10 |  |  |
 | TC-D1 |  |  |
 | TC-D2 |  |  |
 | TC-D3 |  |  |

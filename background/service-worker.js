@@ -140,7 +140,34 @@ async function startRegionSelection() {
 
 async function beginRegionCapture({ rect, viewport }, sender) {
   selecting = false;
+
+  // Remember the box per site so the next capture can reuse it.
+  const origin = originOf(sender.tab?.url);
+  if (origin) {
+    const remembered = await getSettings();
+    await setSettings({
+      regions: { ...(remembered.regions || {}), [origin]: { rect, viewport } },
+    });
+  }
+
   return createSource("region", rect, viewport, sender.tab?.id);
+}
+
+function originOf(url) {
+  try {
+    return new URL(url).origin;
+  } catch (error) {
+    return null;
+  }
+}
+
+/** Reuse the box this site was last cut with, without showing the overlay. */
+async function startSavedRegion() {
+  const tab = await activeTab();
+  const origin = originOf(tab.url);
+  const saved = origin ? (await getSettings()).regions?.[origin] : null;
+  if (!saved) throw new Error("No saved region for this site yet.");
+  return createSource("region", saved.rect, saved.viewport, tab.id);
 }
 
 async function startVideoPip() {
@@ -366,6 +393,9 @@ async function handle(message, sender) {
 
     case "start-region":
       return startRegionSelection();
+
+    case "start-region-again":
+      return startSavedRegion();
 
     case "region-selected":
       return beginRegionCapture(message, sender);

@@ -19,6 +19,7 @@ const els = {
   modeTab: document.getElementById("mode-tab"),
   modeVideo: document.getElementById("mode-video"),
   region: document.getElementById("cap-region"),
+  useRegion: document.getElementById("use-region"),
   panels: {
     notes: document.getElementById("panel-notes"),
     todos: document.getElementById("panel-todos"),
@@ -276,6 +277,10 @@ function bind() {
     run(els.region, { type: "start-region" }, { close: true }),
   );
 
+  els.useRegion.addEventListener("click", () =>
+    run(els.useRegion, { type: "start-region-again" }, { close: true }),
+  );
+
   els.stop.addEventListener("click", () =>
     run(els.stop, { type: "stop-pip" }, { okText: "Stopped." }),
   );
@@ -355,6 +360,17 @@ async function loadFloatSwitch() {
   els.floatSite.checked = Boolean(status.ok && status.enabled);
 }
 
+/** Offer to reuse the box this site was last cut with. */
+async function loadRegionButton() {
+  const origin = await currentOrigin();
+  if (!origin) {
+    els.useRegion.hidden = true;
+    return;
+  }
+  const settings = await Store.getSettings();
+  els.useRegion.hidden = !settings.regions?.[origin];
+}
+
 function bindFloatSwitch() {
   els.floatSite.addEventListener("change", async () => {
     const wanted = els.floatSite.checked;
@@ -415,6 +431,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadSyncSwitch();
   bindFloatSwitch();
   await loadFloatSwitch();
+  await loadRegionButton();
 
   const response = await send({ type: "get-state" });
   if (response.ok) {
