@@ -143,9 +143,12 @@
       toast("No video to float on this page.");
       return;
     }
+    requestedByUs = true;
     try {
       await video.requestPictureInPicture();
     } catch (error) {
+      // Clear the flag here too, or a later auto-PiP would look like ours.
+      requestedByUs = false;
       toast(`PiPDesk could not float this video (${error?.name || "error"}).`);
     }
   }
@@ -353,7 +356,22 @@
     wireButton,
   };
 
-  document.addEventListener("enterpictureinpicture", syncState, true);
+  /* Chrome and some players open PiP on their own when the tab is hidden.
+     Only a click of ours counts as "the user asked for this". */
+  let requestedByUs = false;
+
+  document.addEventListener(
+    "enterpictureinpicture",
+    () => {
+      const ours = requestedByUs;
+      requestedByUs = false;
+      syncState();
+      if (!ours && document.hidden) {
+        document.exitPictureInPicture().catch(() => {});
+      }
+    },
+    true,
+  );
   document.addEventListener("leavepictureinpicture", syncState, true);
 
   // YouTube gets the control in its player bar instead of the badge.
