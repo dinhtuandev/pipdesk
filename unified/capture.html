@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Capture · PiPDesk</title>
+    <link rel="stylesheet" href="../shared/tokens.css" />
+    <style>
+      html, body { height: 100%; }
+      body { margin: 0; overflow: hidden; background: #0d1017; }
+      #feed { width: 100%; height: 100%; display: block; object-fit: contain; background: #0d1017; }
+      #feed[hidden] { display: none; }
+      #empty {
+        height: 100%; display: flex; align-items: center; justify-content: center;
+        text-align: center; padding: 0 24px;
+        color: var(--text-dim); font-size: 13px; line-height: 1.5;
+      }
+      #empty[hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <!-- Left half of the unified workspace window. The offscreen document owns
+         the composite canvas and pushes its stream here over a same-origin
+         BroadcastChannel; this frame only plays it. -->
+    <video id="feed" playsinline muted hidden></video>
+    <div id="empty">Nothing floating yet.<br />Float a tab or a region to see it here.</div>
+    <script src="../offscreen/layout.js"></script>
+    <script src="capture.js"></script>
+  </body>
+</html>

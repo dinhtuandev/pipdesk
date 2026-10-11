@@ -19,6 +19,7 @@ profile when you turn on sync).
 | Notes | Capture-and-go notes in their own floating panel. |
 | Todos | Active/done split, due dates with overdue highlighting, inline editing. |
 | Focus timer | Pomodoro with work / short / long breaks, daily history and a system notification when a session ends. |
+| Workspace window | Capture and a panel side by side in one window; separate windows when the live stream refuses to attach. |
 | Optional sync | One switch mirrors notes, todos and timer through `chrome.storage.sync`. |
 
 ## Install (unpacked)

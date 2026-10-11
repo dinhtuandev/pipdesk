@@ -51,6 +51,13 @@ reload the tab you are testing.
   from the offscreen document or one of its iframes replaces the first (measured,
   TC-I2). Several sources therefore share a single canvas in
   `offscreen/offscreen.js`; do not go back to assuming one capture per window.
+  Document PiP additionally needs the page's click: calling it from the
+  offscreen document never produces a visible window, so the unified workspace
+  window is opened by injected page code (`openUnifiedWindow` in the worker)
+  and the canvas stream reaches its capture iframe over a same-origin
+  BroadcastChannel (`unified/capture.js`).
+- `unified/` — the capture half of the workspace window. Plain scripts like the
+  panels; `capture.html` is web-accessible for the same reason the panels are.
 - Anything added to the manifest requires a reason: permissions here are
   intentionally narrow (`activeTab`, `tabCapture`, `offscreen`, `scripting`,
   `storage`, `alarms`, `notifications`, `contextMenus`). The only host access is

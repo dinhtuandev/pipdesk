@@ -7,6 +7,12 @@
    It has to be one window: a document only ever holds a single
    document.pictureInPictureElement, and the offscreen document is the only
    capture host the extension gets.
+
+   Feature 6 (unified workspace): the canvas stream is also published over a
+   same-origin BroadcastChannel so the page-hosted unified window (capture
+   iframe + panel iframe side by side) can play it. A live MediaStream cannot
+   travel in a runtime message, hence the channel. The worker tells this
+   document when publishing is wanted; failures here never stop the capture.
    ========================================================================== */
 
 const compositeCanvas = document.getElementById("composite-canvas");
@@ -16,7 +22,7 @@ const compositeContext = compositeCanvas.getContext("2d", { alpha: false });
 const MAX_SOURCES = 4;
 
 /* Layout maths lives in offscreen/layout.js so `node --test` can require it. */
-const { slots, frameRate } = globalThis.__pipDeskLayout;
+const { slots, frameRate, UNIFIED_CHANNEL } = globalThis.__pipDeskLayout;
 
 const supportsFrameCallback =
   typeof pipVideo.requestVideoFrameCallback === "function";
@@ -39,6 +45,63 @@ let fallbackTimer = null;
 let closing = false;
 /* Either null, or the id of a source that is still in `sources`. */
 let focusedId = null;
+
+/* --- unified publish -------------------------------------------------- */
+
+/* True while the worker wants the canvas stream on the channel (workspace
+   mode). Publishing never throws into the capture path: a channel failure
+   only means the unified window falls back to separate windows. */
+let unifiedPublish = false;
+let captureGeneration = 0;
+let captureChannel = null;
+
+function channel() {
+  if (!captureChannel) captureChannel = new BroadcastChannel(UNIFIED_CHANNEL);
+  return captureChannel;
+}
+
+function publishCaptureStream() {
+  if (!unifiedPublish || !canvasStream) return { ok: true, published: false };
+  captureGeneration += 1;
+  try {
+    channel().postMessage({
+      type: "capture-stream",
+      stream: canvasStream,
+      generation: captureGeneration,
+    });
+  } catch (error) {
+    console.warn("[PiPDesk] unified publish failed", error);
+    return { ok: true, published: false };
+  }
+  return { ok: true, published: true, generation: captureGeneration };
+}
+
+/** Enter the classic video-PiP window with the current canvas stream. */
+async function enterVideoPip() {
+  if (sources.size === 0) return { ok: true, noop: true };
+  if (document.pictureInPictureElement === pipVideo) {
+    return { ok: true, noop: true };
+  }
+  if (!canvasStream) canvasStream = compositeCanvas.captureStream(30);
+  if (!pipVideo.srcObject) pipVideo.srcObject = canvasStream;
+  await pipVideo.play().catch(() => {});
+  pumpFrames();
+  await waitForData(pipVideo);
+  await pipVideo.requestPictureInPicture();
+  return { ok: true, how: "video-pip" };
+}
+
+/** Leave the classic window; our own exit must not report back as the user. */
+async function exitVideoPip() {
+  if (document.pictureInPictureElement !== pipVideo) return { ok: true, noop: true };
+  closing = true;
+  try {
+    await document.exitPictureInPicture();
+  } catch (error) {
+    closing = false;
+  }
+  return { ok: true };
+}
 
 /* --- helpers -------------------------------------------------------- */
 
@@ -253,19 +316,24 @@ async function createSource(message) {
   drawFrame();
 
   // The window opens once, on the first source; the rest just join the grid.
+  // With deferPip the worker opens the unified window itself right after, so
+  // this side only warms the stream and skips the video-PiP request.
   if (sources.size === 1) {
     canvasStream = compositeCanvas.captureStream(30);
     pipVideo.srcObject = canvasStream;
     await pipVideo.play().catch(() => {});
     pumpFrames();
-    await waitForData(pipVideo);
-    await pipVideo.requestPictureInPicture();
+    if (!message.deferPip) {
+      await waitForData(pipVideo);
+      await pipVideo.requestPictureInPicture();
+    }
   } else {
     // The canvas stream stays as it is; only the draw rate reacts to the count.
     pumpFrames();
   }
+  publishCaptureStream();
 
-  return { ok: true, sourceId };
+  return { ok: true, sourceId, deferred: Boolean(message.deferPip) };
 }
 
 async function stopAll() {
@@ -333,6 +401,24 @@ function listSources() {
   };
 }
 
+/* Feature 6: the worker flips publishing on/off; the page-hosted unified
+   window plays whatever lands on the channel. Toggling off never touches
+   the capture — the worker migrates back to video-PiP explicitly. */
+function setUnified(message) {
+  unifiedPublish = Boolean(message?.on);
+  if (unifiedPublish) publishCaptureStream();
+  return { ok: true, enabled: unifiedPublish };
+}
+
+function getUnifiedInfo() {
+  return {
+    ok: true,
+    enabled: unifiedPublish,
+    publishing: Boolean(unifiedPublish && canvasStream),
+    sourceCount: sources.size,
+  };
+}
+
 /* --- messaging ------------------------------------------------------ */
 
 const TASKS = {
@@ -340,6 +426,12 @@ const TASKS = {
   "stop-source": stopSource,
   "focus-source": focusSource,
   "list-sources": listSources,
+  "get-unified-info": getUnifiedInfo,
+  "set-unified": setUnified,
+  "unified-publish": publishCaptureStream,
+  "unified-enter-video": enterVideoPip,
+  "unified-exit-video": exitVideoPip,
+  "unified-capture-loaded": publishCaptureStream,
 };
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

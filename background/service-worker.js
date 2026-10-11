@@ -6,6 +6,31 @@
 const OFFSCREEN_URL = "offscreen/offscreen.html";
 const OFFSCREEN_TARGET = "offscreen";
 const TIMER_ALARM = "focus-timer";
+const PIP_AUTOSTOP_ALARM = "pipdesk-pip-autostop";
+const PIP_AUTOSTOP_KEY = "pipAutoStopEndsAt";
+
+/* Unified window (feature 6): one page-hosted document-PiP holds a capture
+   iframe beside a panel iframe. Document-PiP needs the page's click, so the
+   window is opened by injected code (same trick as openPanel); the live pixels
+   arrive over a same-origin BroadcastChannel from the offscreen compositor.
+   Sizes mirror offscreen/layout.js unifiedWindowSize(); the panel list mirrors
+   isUnifiedPanel() there — kept as literals because the worker cannot load
+   page scripts. */
+const UNIFIED_DEFAULTS = { unifiedWindow: false, unifiedPanel: "notes" };
+const UNIFIED_PANEL_IDS = ["notes", "todos", "timer"];
+const CAPTURE_FILE = "unified/capture.html";
+
+/* Last known workspace state. `open` flips false before our own close so the
+   pagehide report from a close we asked for is a no-op. */
+let unifiedState = {
+  open: false,
+  hostTabId: null,
+  panel: "notes",
+  captureReady: false,
+  streamLive: false,
+  streamTried: false,
+};
+let captureWaiter = null;
 
 const PANELS = {
   notes: { file: "panels/notes.html", width: 380, height: 540 },
@@ -28,14 +53,28 @@ const ACTION_MESSAGES = new Set([
   "start-video-pip",
   "video-pip-started",
   "stop-pip",
+  "open-panel",
+  "set-unified-window",
 ]);
 
 /* --- small helpers -------------------------------------------------- */
 
 async function broadcast() {
   const sources = await listSources();
+  const settings = await getSettings();
   chrome.runtime
-    .sendMessage({ type: "state", sources, selecting, error: lastError })
+    .sendMessage({
+      type: "state",
+      sources,
+      selecting,
+      error: lastError,
+      unified: {
+        enabled: Boolean(settings.unifiedWindow),
+        open: unifiedState.open,
+        panel: unifiedState.panel,
+        streamLive: unifiedState.streamLive,
+      },
+    })
     .catch(() => {
       /* no listener open right now */
     });
@@ -230,9 +269,25 @@ async function createSource(kind, rect, viewport, tabId) {
     viewport: viewport || null,
     tabId: tab.id,
     title: tab.title || "",
+    deferPip: (await getSettings()).unifiedWindow === true,
   });
   if (!result?.ok) throw new Error(result?.error || "PiP was refused.");
 
+  // Workspace mode: the capture joins the unified window; when the live
+  // stream refuses to attach, the capture survives in the classic video-PiP.
+  if ((await getSettings()).unifiedWindow === true) {
+    try {
+      await toOffscreen({ type: "set-unified", on: true });
+      await ensureUnifiedWindow((await getSettings()).unifiedPanel || "notes");
+    } catch (error) {
+      console.warn("[PiPDesk] unified open failed, video fallback", error);
+    }
+    if (!unifiedState.streamLive && (await listSources()).length > 0) {
+      await toOffscreen({ type: "unified-enter-video" }).catch(() => {});
+    }
+  }
+
+  await schedulePipAutoStop();
   await broadcast();
   return { ok: true, sourceId };
 }
@@ -258,12 +313,87 @@ async function focusSource(sourceId) {
   return result;
 }
 
+/** Feature 1: jump back to the tab a floating source came from. The composite
+    canvas is view-only, so this is the way back to interact. */
+async function gotoSource(sourceId) {
+  if (!sourceId) throw new Error("No floating source to go to.");
+  const shown = await listSources();
+  const found = shown.find((source) => source.id === sourceId);
+  if (!found) throw new Error("That floating source is gone.");
+  if (found.tabId === undefined || found.tabId === null) {
+    throw new Error("That source has no tab to go back to.");
+  }
+  let tab;
+  try {
+    tab = await chrome.tabs.get(found.tabId);
+  } catch (error) {
+    throw new Error("The source tab was closed.");
+  }
+  await chrome.windows.update(tab.windowId, { focused: true });
+  await chrome.tabs.update(tab.id, { active: true });
+  return { ok: true, tabId: tab.id };
+}
+
+/* --- Feature 4: float hẹn giờ, tự đóng ---------------------------------- */
+/** Minutes choices the popup offers. 0 means off. */
+const PIP_AUTOSTOP_CHOICES = [0, 15, 25, 50];
+
+async function getPipAutoStop() {
+  const stored = await chrome.storage.local.get(PIP_AUTOSTOP_KEY);
+  const endsAt = Number(stored[PIP_AUTOSTOP_KEY]) || null;
+  const settings = await getSettings();
+  const minutes = Number(settings.pipAutoStopMin) || 0;
+  return { minutes, endsAt };
+}
+
+async function schedulePipAutoStop() {
+  const { minutes } = await getPipAutoStop();
+  if (!minutes || minutes <= 0) return;
+  // A new capture extends the deadline from now; simple + predictable.
+  const endsAt = Date.now() + minutes * 60 * 1000;
+  await chrome.storage.local.set({ [PIP_AUTOSTOP_KEY]: endsAt });
+  await chrome.alarms.create(PIP_AUTOSTOP_ALARM, { when: endsAt });
+}
+
+async function clearPipAutoStop() {
+  await chrome.alarms.clear(PIP_AUTOSTOP_ALARM);
+  await chrome.storage.local.remove(PIP_AUTOSTOP_KEY);
+}
+
+/** The deadline only matters while something is floating. */
+async function syncPipAutoStop() {
+  const { endsAt } = await getPipAutoStop();
+  if (!endsAt) return;
+  if ((await listSources()).length === 0 || endsAt <= Date.now()) {
+    await clearPipAutoStop();
+    return;
+  }
+  await chrome.alarms.create(PIP_AUTOSTOP_ALARM, { when: endsAt });
+}
+
+async function setPipAutoStop(minutes) {
+  const value = Number(minutes) || 0;
+  if (!PIP_AUTOSTOP_CHOICES.includes(value)) {
+    throw new Error("Auto-stop must be one of: off, 15, 25, 50 minutes.");
+  }
+  await setSettings({ pipAutoStopMin: value });
+  if (!value) {
+    await clearPipAutoStop();
+  } else if ((await listSources()).length > 0) {
+    await schedulePipAutoStop();
+  }
+  await broadcast();
+  return { ok: true, minutes: value };
+}
+
 /** Stop every floating source, then release the offscreen document. */
 async function stopAllSources() {
+  await closeUnifiedWindow();
   for (const source of await listSources()) {
     await toOffscreen({ type: "stop-source", sourceId: source.id });
   }
   await stopTabStream();
+  await clearPipAutoStop();
   await broadcast();
   return { ok: true };
 }
@@ -347,6 +477,21 @@ async function openPanel(page) {
   const panel = PANELS[page];
   if (!panel) throw new Error(`Unknown panel: ${page}`);
 
+  // Workspace mode: the panel joins the unified window beside the capture.
+  if ((await getSettings()).unifiedWindow === true) {
+    try {
+      await toOffscreen({ type: "set-unified", on: true });
+    } catch (error) {
+      /* offscreen will exist once a capture starts; panel-only proceeds */
+    }
+    try {
+      const won = await ensureUnifiedWindow(page);
+      if (won?.ok) return { ok: true, how: "unified" };
+    } catch (error) {
+      console.warn("[PiPDesk] unified panel failed, separate window", error);
+    }
+  }
+
   const url = chrome.runtime.getURL(panel.file);
   const tab = await activeTab();
 
@@ -374,19 +519,253 @@ async function openPanel(page) {
   return { ok: true, how: "window", windowId: win.id };
 }
 
+/* --- unified workspace window ------------------------------------------- */
+
+/**
+ * Runs inside the page. Kept free of outer references because
+ * chrome.scripting stringifies it; injection keeps the user gesture that
+ * document Picture-in-Picture requires (calling it from the offscreen
+ * document never produces a visible window).
+ */
+async function openUnifiedWindow({ captureUrl, panelUrl, panel, width, height }) {
+  const known = window.__pipDeskUnified;
+  if (known && known.pipWin && !known.pipWin.closed) {
+    if (panelUrl && known.panelFrame && known.panel !== panel) {
+      known.panelFrame.src = panelUrl;
+      known.panel = panel;
+    }
+    return { ok: true, switched: true };
+  }
+
+  if (!window.documentPictureInPicture) {
+    return { ok: false, error: "Document Picture-in-Picture is unavailable." };
+  }
+
+  let pipWin;
+  try {
+    pipWin = await window.documentPictureInPicture.requestWindow({
+      width,
+      height,
+    });
+  } catch (error) {
+    return { ok: false, error: String((error && error.message) || error) };
+  }
+
+  const bg = "#0d1017";
+  pipWin.document.documentElement.setAttribute(
+    "style",
+    `height:100%;background:${bg}`,
+  );
+  pipWin.document.body.setAttribute(
+    "style",
+    `margin:0;height:100%;overflow:hidden;background:${bg};display:flex;`,
+  );
+
+  const capture = pipWin.document.createElement("iframe");
+  capture.src = captureUrl;
+  capture.setAttribute(
+    "style",
+    `flex:1 1 auto;height:100%;border:0;display:block;background:${bg}`,
+  );
+  const side = pipWin.document.createElement("iframe");
+  side.src = panelUrl;
+  side.setAttribute(
+    "style",
+    `flex:0 0 360px;height:100%;border:0;border-left:1px solid #232936;display:block;background:${bg}`,
+  );
+  pipWin.document.body.append(capture, side);
+
+  window.__pipDeskUnified = {
+    pipWin,
+    captureFrame: capture,
+    panelFrame: side,
+    panel,
+    alive: true,
+  };
+
+  if (!window.__pipDeskUnifiedListener) {
+    window.__pipDeskUnifiedListener = true;
+    chrome.runtime.onMessage.addListener((message) => {
+      const state = window.__pipDeskUnified;
+      if (message?.type === "unified-switch-panel" && message?.url) {
+        if (state?.panelFrame && state.panel !== message.panel) {
+          state.panelFrame.src = message.url;
+          state.panel = message.panel;
+        }
+      }
+      if (message?.type === "unified-close") {
+        // Our own close must not report back as the user closing the window.
+        if (state) state.alive = false;
+        try {
+          if (state?.pipWin && !state.pipWin.closed) state.pipWin.close();
+        } catch (error) {
+          /* already gone */
+        }
+      }
+    });
+  }
+
+  pipWin.addEventListener("pagehide", () => {
+    const state = window.__pipDeskUnified;
+    const ours = !state?.alive;
+    if (state) state.alive = false;
+    if (ours) return;
+    try {
+      chrome.runtime.sendMessage({ type: "unified-closed" });
+    } catch (error) {
+      /* worker is gone */
+    }
+  });
+
+  return { ok: true, opened: true };
+}
+
+/** One waiter at a time for the capture iframe's ready report. */
+function waitForCaptureReady(timeoutMs) {
+  if (captureWaiter) {
+    const stale = captureWaiter;
+    captureWaiter = null;
+    clearTimeout(stale.timer);
+    stale.resolve(false);
+  }
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      captureWaiter = null;
+      resolve(false);
+    }, timeoutMs);
+    captureWaiter = {
+      timer,
+      resolve: (value) => {
+        clearTimeout(timer);
+        captureWaiter = null;
+        resolve(value);
+      },
+    };
+  });
+}
+
+async function switchUnifiedPanel(page) {
+  const panel = UNIFIED_PANEL_IDS.includes(page) ? page : "notes";
+  unifiedState.panel = panel;
+  await setSettings({ unifiedPanel: panel });
+  if (!unifiedState.open || unifiedState.hostTabId === null) return { ok: true };
+  try {
+    await chrome.tabs.sendMessage(unifiedState.hostTabId, {
+      type: "unified-switch-panel",
+      panel,
+      url: chrome.runtime.getURL(PANELS[panel].file),
+    });
+  } catch (error) {
+    // The host tab went away: the window died with it.
+    unifiedState.open = false;
+    unifiedState.hostTabId = null;
+    throw new Error("Workspace window is gone.");
+  }
+  return { ok: true };
+}
+
+async function closeUnifiedWindow() {
+  if (!unifiedState.open) return;
+  const host = unifiedState.hostTabId;
+  unifiedState.open = false;
+  unifiedState.hostTabId = null;
+  unifiedState.captureReady = false;
+  if (host !== null && host !== undefined) {
+    try {
+      await chrome.tabs.sendMessage(host, { type: "unified-close" });
+    } catch (error) {
+      /* already gone */
+    }
+  }
+}
+
+/**
+ * Open the workspace window in the active tab (or point its panel at `page`
+ * when it already lives there), then wait for the live capture when sources
+ * exist. Never throws for a dead stream: the window stays for the panel and
+ * the capture falls back to the classic video window.
+ */
+async function ensureUnifiedWindow(page) {
+  const panel = UNIFIED_PANEL_IDS.includes(page) ? page : "notes";
+  const tab = await activeTab();
+
+  if (unifiedState.open && unifiedState.hostTabId === tab.id) {
+    await switchUnifiedPanel(panel);
+    if ((await listSources()).length > 0 && !unifiedState.streamTried) {
+      await toOffscreen({ type: "unified-publish" });
+      unifiedState.streamTried = true;
+      unifiedState.streamLive = await waitForCaptureReady(6000);
+    }
+    return { ok: true, how: "unified", stream: unifiedState.streamLive };
+  }
+
+  // One workspace at a time: a window hosted elsewhere moves here.
+  if (unifiedState.open) await closeUnifiedWindow();
+
+  const args = {
+    captureUrl: chrome.runtime.getURL(CAPTURE_FILE),
+    panelUrl: chrome.runtime.getURL(PANELS[panel].file),
+    panel,
+    width: 1280,
+    height: 720,
+  };
+  let injected;
+  try {
+    [injected] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: openUnifiedWindow,
+      args: [args],
+    });
+  } catch (error) {
+    throw new Error(`Workspace window refused: ${String(error?.message || error)}`);
+  }
+  if (!injected?.result?.ok) {
+    throw new Error(injected?.result?.error || "Workspace window refused.");
+  }
+
+  unifiedState = {
+    open: true,
+    hostTabId: tab.id,
+    panel,
+    captureReady: false,
+    streamLive: false,
+    streamTried: false,
+  };
+  await setSettings({ unifiedPanel: panel });
+
+  if ((await listSources()).length === 0) return { ok: true, how: "unified" };
+
+  await toOffscreen({ type: "unified-publish" });
+  unifiedState.streamTried = true;
+  unifiedState.streamLive = await waitForCaptureReady(6000);
+  return { ok: true, how: "unified", stream: unifiedState.streamLive };
+}
+
 /* --- message routing ------------------------------------------------ */
 
 async function handle(message, sender) {
   if (ACTION_MESSAGES.has(message?.type)) lastError = "";
 
   switch (message?.type) {
-    case "get-state":
+    case "get-state": {
+      const pipAutoStop = await getPipAutoStop();
+      await syncPipAutoStop();
+      const settings = await getSettings();
       return {
         ok: true,
         sources: await listSources(),
         selecting,
         error: lastError,
+        pipAutoStop,
+        unified: {
+          enabled: Boolean(settings.unifiedWindow),
+          open: unifiedState.open,
+          panel: unifiedState.panel,
+          captureReady: unifiedState.captureReady,
+          streamLive: unifiedState.streamLive,
+        },
       };
+    }
 
     case "start-full-pip":
       return startFullTabPip();
@@ -420,6 +799,80 @@ async function handle(message, sender) {
 
     case "focus-source":
       return focusSource(message.sourceId);
+
+    case "goto-source":
+      return gotoSource(message.sourceId);
+
+    case "set-pip-autostop":
+      return setPipAutoStop(message.minutes);
+
+    case "get-unified-state":
+      return {
+        ok: true,
+        enabled: Boolean((await getSettings()).unifiedWindow),
+        open: unifiedState.open,
+        panel: unifiedState.panel,
+        streamLive: unifiedState.streamLive,
+      };
+
+    case "set-unified-window": {
+      const on = Boolean(message.on);
+      await setSettings({ unifiedWindow: on });
+      if (!on) {
+        await closeUnifiedWindow();
+        if ((await listSources()).length > 0) {
+          await toOffscreen({ type: "set-unified", on: false }).catch(() => {});
+          await toOffscreen({ type: "unified-enter-video" }).catch(() => {});
+        }
+        await broadcast();
+        return { ok: true, enabled: false };
+      }
+      if (await hasOffscreenDocument()) {
+        await toOffscreen({ type: "set-unified", on: true }).catch(() => {});
+      }
+      try {
+        const settings = await getSettings();
+        await ensureUnifiedWindow(settings.unifiedPanel || "notes");
+        // The workspace owns the pixels now: drop the classic video window.
+        await toOffscreen({ type: "unified-exit-video" }).catch(() => {});
+        await broadcast();
+        return { ok: true, enabled: true, how: "unified" };
+      } catch (error) {
+        const text = String(error?.message || error);
+        console.warn("[PiPDesk] workspace toggle failed", error);
+        await broadcast();
+        return { ok: true, enabled: true, fallback: "separate", error: text };
+      }
+    }
+
+    case "unified-capture-ready":
+      unifiedState.captureReady = true;
+      unifiedState.streamLive = true;
+      if (captureWaiter) captureWaiter.resolve(true);
+      await broadcast();
+      return { ok: true };
+
+    case "unified-capture-failed":
+      console.warn("[PiPDesk] unified capture refused:", message.error);
+      if (captureWaiter) captureWaiter.resolve(false);
+      return { ok: true };
+
+    case "unified-closed": {
+      // The user closed the workspace (or its host tab went away): floating
+      // sources end with it, mirroring the video-PiP close. A close we asked
+      // for ourselves already flipped `open` off, so it lands here as no-op.
+      if (!unifiedState.open) return { ok: true };
+      const host = unifiedState.hostTabId;
+      const fromHost = sender?.tab?.id;
+      if (host !== null && fromHost !== undefined && fromHost !== host) {
+        return { ok: true };
+      }
+      unifiedState.open = false;
+      unifiedState.hostTabId = null;
+      unifiedState.captureReady = false;
+      await stopAllSources();
+      return { ok: true };
+    }
 
     case "stop-pip":
       return stopPip(message.sourceId);
@@ -480,7 +933,13 @@ const FLOAT_SCRIPT_PREFIX = "pipdesk-float-";
 
 async function getSettings() {
   const { settings } = await chrome.storage.local.get("settings");
-  return { syncEnabled: false, floatOrigins: [], ...(settings || {}) };
+  return {
+    syncEnabled: false,
+    floatOrigins: [],
+    pipAutoStopMin: 0,
+    ...UNIFIED_DEFAULTS,
+    ...(settings || {}),
+  };
 }
 
 async function setSettings(patch) {
@@ -665,6 +1124,14 @@ chrome.runtime.onConnect.addListener((port) => {
 
 /** A closed tab takes its floating sources with it. */
 chrome.tabs.onRemoved.addListener(async (tabId) => {
+  // The workspace window dies with its host tab: floating ends with it.
+  if (unifiedState.open && unifiedState.hostTabId === tabId) {
+    unifiedState.open = false;
+    unifiedState.hostTabId = null;
+    unifiedState.captureReady = false;
+    await stopAllSources();
+    return;
+  }
   const mine = (await listSources()).filter(
     (source) => source.tabId === tabId,
   );
@@ -678,6 +1145,22 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name.startsWith("todo-")) {
     await notifyTodoDue(alarm.name.slice("todo-".length));
+    return;
+  }
+  if (alarm.name === PIP_AUTOSTOP_ALARM) {
+    await clearPipAutoStop();
+    const hadSources = (await listSources()).length > 0;
+    if (hadSources) {
+      await stopAllSources();
+      await chrome.notifications.create(PIP_AUTOSTOP_ALARM, {
+        type: "basic",
+        iconUrl: "icons/icon128.png",
+        title: "Floating window closed",
+        message: "Auto-stop time is up. Nice work — time for a break?",
+        priority: 2,
+      });
+    }
+    await broadcast();
     return;
   }
   if (alarm.name !== TIMER_ALARM) return;
@@ -718,6 +1201,10 @@ async function notifyTodoDue(id) {
 chrome.notifications.onClicked.addListener((notificationId) => {
   if (notificationId === TIMER_ALARM) {
     chrome.notifications.clear(TIMER_ALARM);
+    return;
+  }
+  if (notificationId === PIP_AUTOSTOP_ALARM) {
+    chrome.notifications.clear(PIP_AUTOSTOP_ALARM);
     return;
   }
   if (notificationId.startsWith("todo-")) {

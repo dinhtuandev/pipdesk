@@ -250,6 +250,17 @@ body {
   color: var(--mint);
 }
 
+.micro {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.micro:empty {
+  display: none;
+}
+
 .foot {
   display: flex;
   align-items: center;
@@ -368,6 +379,41 @@ body {
 
 .source__focus:disabled {
   opacity: 0.5;
+}
+
+.source__goto {
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  text-decoration: underline;
+}
+
+.source__goto:disabled {
+  opacity: 0.5;
+}
+
+.autostop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+
+.autostop__select {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  padding: 4px 6px;
 }
 
 /* `.group` sets `display`, which would otherwise beat the `hidden` attribute

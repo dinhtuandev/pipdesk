@@ -11,8 +11,15 @@ const {
   FULL_HEIGHT,
   TILE_WIDTH,
   TILE_HEIGHT,
+  UNIFIED_WIDTH,
+  UNIFIED_HEIGHT,
+  UNIFIED_PANEL_WIDTH,
+  UNIFIED_CHANNEL,
   slots,
   frameRate,
+  unifiedFrame,
+  unifiedWindowSize,
+  isUnifiedPanel,
 } = require("../offscreen/layout.js");
 
 const CENTRED_Y = Math.round((FULL_HEIGHT - TILE_HEIGHT) / 2);
@@ -101,4 +108,30 @@ test("every slot stays inside the canvas", () => {
       }
     }
   }
+});
+
+test("unified frame splits canvas and panel without overlap", () => {
+  const frame = unifiedFrame();
+  assert.equal(frame.canvas.x, 0);
+  assert.equal(frame.canvas.y, 0);
+  assert.equal(frame.canvas.width, UNIFIED_WIDTH - UNIFIED_PANEL_WIDTH);
+  assert.equal(frame.canvas.height, UNIFIED_HEIGHT);
+  assert.equal(frame.panel.x, frame.canvas.width);
+  assert.equal(frame.panel.width, UNIFIED_PANEL_WIDTH);
+  assert.equal(frame.panel.height, UNIFIED_HEIGHT);
+  assert.equal(frame.canvas.width + frame.panel.width, UNIFIED_WIDTH);
+});
+
+test("unified window size matches the composite canvas", () => {
+  assert.deepEqual(unifiedWindowSize(), { width: 1280, height: 720 });
+  assert.ok(typeof UNIFIED_CHANNEL === "string" && UNIFIED_CHANNEL.length > 0);
+});
+
+test("only notes, todos and timer are valid unified panels", () => {
+  assert.ok(isUnifiedPanel("notes"));
+  assert.ok(isUnifiedPanel("todos"));
+  assert.ok(isUnifiedPanel("timer"));
+  assert.ok(!isUnifiedPanel("settings"));
+  assert.ok(!isUnifiedPanel(""));
+  assert.ok(!isUnifiedPanel(null));
 });

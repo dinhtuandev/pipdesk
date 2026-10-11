@@ -42,13 +42,56 @@
     return count >= 3 ? 15 : 30;
   }
 
+  /* Feature 6 (unified workspace window): one document-PiP hosted in the page
+     holds a capture iframe on the left and a panel iframe on the right. Pure
+     geometry + names only — the worker and the offscreen document wire it. */
+  const UNIFIED_WIDTH = 1280;
+  const UNIFIED_HEIGHT = 720;
+  const UNIFIED_PANEL_WIDTH = 360;
+  const UNIFIED_CHANNEL = "pipdesk-capture";
+  const UNIFIED_PANELS = ["notes", "todos", "timer"];
+
+  function unifiedFrame() {
+    return {
+      canvas: {
+        x: 0,
+        y: 0,
+        width: UNIFIED_WIDTH - UNIFIED_PANEL_WIDTH,
+        height: UNIFIED_HEIGHT,
+      },
+      panel: {
+        x: UNIFIED_WIDTH - UNIFIED_PANEL_WIDTH,
+        y: 0,
+        width: UNIFIED_PANEL_WIDTH,
+        height: UNIFIED_HEIGHT,
+      },
+    };
+  }
+
+  /** Size hint for the document-PiP requestWindow call. */
+  function unifiedWindowSize() {
+    return { width: UNIFIED_WIDTH, height: UNIFIED_HEIGHT };
+  }
+
+  function isUnifiedPanel(id) {
+    return UNIFIED_PANELS.indexOf(id) !== -1;
+  }
+
   const api = {
     FULL_WIDTH,
     FULL_HEIGHT,
     TILE_WIDTH,
     TILE_HEIGHT,
+    UNIFIED_WIDTH,
+    UNIFIED_HEIGHT,
+    UNIFIED_PANEL_WIDTH,
+    UNIFIED_CHANNEL,
+    UNIFIED_PANELS,
     slots,
     frameRate,
+    unifiedFrame,
+    unifiedWindowSize,
+    isUnifiedPanel,
   };
 
   // The page loads this as a plain script; the test runner requires it.

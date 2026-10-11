@@ -10,6 +10,9 @@ const els = {
   stopHint: document.getElementById("stop-hint"),
   stopAll: document.getElementById("stop-all"),
   sourceList: document.getElementById("source-list"),
+  autostop: document.getElementById("autostop"),
+  unified: document.getElementById("unified"),
+  unifiedState: document.getElementById("unified-state"),
   version: document.getElementById("version"),
   sync: document.getElementById("sync"),
   floatSite: document.getElementById("float-site"),
@@ -111,6 +114,96 @@ function updateToggleState(available) {
 
 const KIND_LABEL = { full: "Whole tab", region: "Selected region" };
 
+/** "12:30" left until auto-stop, or "" when off/expired. Pure display only. */
+function autoStopLeft(pipAutoStop) {
+  const endsAt = Number(pipAutoStop?.endsAt) || 0;
+  if (!endsAt) return "";
+  const ms = endsAt - Date.now();
+  if (ms <= 0) return "";
+  const totalSec = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSec / 60);
+  const seconds = String(totalSec % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
+async function loadAutoStop() {
+  if (!els.autostop) return;
+  const response = await send({ type: "get-state" });
+  if (response?.ok) {
+    els.autostop.value = String(Number(response.pipAutoStop?.minutes) || 0);
+  }
+}
+
+function bindAutoStop() {
+  if (!els.autostop) return;
+  els.autostop.addEventListener("change", async () => {
+    const minutes = Number(els.autostop.value) || 0;
+    els.autostop.disabled = true;
+    const response = await send({ type: "set-pip-autostop", minutes });
+    if (!response?.ok) {
+      setNote(response?.error || "That did not work.", "error");
+      await loadAutoStop();
+    } else if (minutes > 0) {
+      setNote(`Floating window will close in ${minutes} min.`, "ok");
+    } else {
+      setNote("Auto-stop off.");
+    }
+    await loadState();
+    els.autostop.disabled = false;
+  });
+}
+
+/* --- workspace window (feature 6) ------------------------------------- */
+
+const UNIFIED_PANEL_LABEL = { notes: "Notes", todos: "Todos", timer: "Focus" };
+
+function renderUnified(unified, live) {
+  if (!els.unified) return;
+  const enabled = Boolean(unified?.enabled);
+  if (els.unified.checked !== enabled) els.unified.checked = enabled;
+  if (!els.unifiedState) return;
+  if (!enabled) {
+    els.unifiedState.textContent = "";
+    return;
+  }
+  if (unified?.open) {
+    const panel = UNIFIED_PANEL_LABEL[unified.panel] || "Panel";
+    els.unifiedState.textContent =
+      live && !unified.streamLive
+        ? `Workspace open · ${panel} beside a separate capture (stream refused).`
+        : `Workspace open · ${panel} beside the capture.`;
+    return;
+  }
+  els.unifiedState.textContent = "Workspace on — opens with the next capture or panel.";
+}
+
+async function loadUnified() {
+  if (!els.unified) return;
+  const response = await send({ type: "get-state" });
+  if (response?.ok) renderUnified(response.unified, (response.sources || []).length > 0);
+}
+
+function bindUnified() {
+  if (!els.unified) return;
+  els.unified.addEventListener("change", async () => {
+    const wanted = els.unified.checked;
+    els.unified.disabled = true;
+    const response = await send({ type: "set-unified-window", on: wanted });
+    if (!response?.ok) {
+      setNote(response?.error || "That did not work.", "error");
+      els.unified.checked = !wanted;
+    } else if (response.fallback) {
+      setNote("Workspace window refused here — separate windows instead.");
+    } else if (wanted) {
+      setNote("Workspace on. Capture and panel share one window.", "ok");
+    } else {
+      setNote("Workspace off.");
+    }
+    await loadState();
+    els.unified.disabled = false;
+  });
+}
+
 function sourceLabel(source) {
   const title = String(source?.title || "").trim();
   const kind = KIND_LABEL[source?.kind] || "Floating window";
@@ -142,6 +235,22 @@ function renderSources(sources) {
       await loadState();
     });
 
+    const go = document.createElement("button");
+    go.type = "button";
+    go.className = "source__goto";
+    go.textContent = "Go to tab";
+    go.title = "Jump back to the source tab to interact";
+    go.addEventListener("click", async () => {
+      go.disabled = true;
+      const response = await send({ type: "goto-source", sourceId: source.id });
+      if (response?.ok) {
+        window.close();
+        return;
+      }
+      setNote(response?.error || "The source tab is gone.", "error");
+      await loadState();
+    });
+
     const stop = document.createElement("button");
     stop.type = "button";
     stop.className = "source__stop";
@@ -152,7 +261,7 @@ function renderSources(sources) {
       await loadState();
     });
 
-    row.append(label, focus, stop);
+    row.append(label, focus, go, stop);
     els.sourceList.appendChild(row);
   }
 
@@ -176,11 +285,20 @@ function render(payload) {
   renderSources(sources);
 
   if (live) {
-    els.stopHint.textContent =
+    const base =
       sources.length === 1
         ? "1 floating source"
         : `${sources.length} floating sources`;
+    const left = autoStopLeft(payload?.pipAutoStop);
+    els.stopHint.textContent = left ? `${base} · closes in ${left}` : base;
   }
+
+  if (payload?.pipAutoStop && els.autostop) {
+    const minutes = Number(payload.pipAutoStop.minutes) || 0;
+    if (els.autostop.value !== String(minutes)) els.autostop.value = String(minutes);
+  }
+
+  renderUnified(payload?.unified, live);
 
   applyModeAvailability();
 
@@ -465,6 +583,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   setPipMode("tab");
   bindSyncSwitch();
   await loadSyncSwitch();
+  bindAutoStop();
+  await loadAutoStop();
+  bindUnified();
+  await loadUnified();
   bindFloatSwitch();
   await loadFloatSwitch();
   await loadRegionButton();

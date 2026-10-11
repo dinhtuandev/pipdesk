@@ -37,7 +37,7 @@ Tổng hợp vào bảng ở mục 14.
 - Kỳ vọng: có bộ chọn mode `Tab` / `Video` với `Tab` đang được chọn, và **một**
   nút hành động ghi `Whole tab` / `Everything on the page`; nút `Selected region`
   vẫn riêng một nút; `Stop PiP` không hiện; ô note trống; góc dưới phải hiện
-  `v0.2.0`; công tắc `Sync across devices` đang tắt.
+  `v0.3.0`; công tắc `Sync across devices` đang tắt.
 - Neo: `popup/popup.js` — `setPipMode("tab")` lúc mở popup, `render()` với
   `state` rỗng cho `live = false`, `updateToggleState()` khoá mode `Video` khi
   trang không có video; `loadSyncSwitch()` đọc `syncEnabled` mặc định `false`
@@ -224,7 +224,7 @@ Tổng hợp vào bảng ở mục 14.
 ### TC-J1 — Ba tab trong popup (Capture / Help / Version)
 - Thao tác: mở popup, bấm lần lượt `Help`, `Version`, rồi quay lại `Capture`.
 - Kỳ vọng: mở lên đang ở `Capture`; `Help` hiện danh sách cách dùng; `Version`
-  hiện tên extension, `v0.2.0` và tác giả; quay lại `Capture` thì bộ chọn mode
+  hiện tên extension, `v0.3.0` và tác giả; quay lại `Capture` thì bộ chọn mode
   cùng danh sách nguồn vẫn chạy bình thường.
 - Neo: `popup/popup.html` — ba nút `#tab-*` cộng ba vùng `#view-*`;
   `popup/popup.js` — `setTab()` chỉ đổi `hidden`, `loadAbout()` đọc
@@ -598,6 +598,55 @@ cùng vẽ vào một canvas và cùng nổi trong một cửa sổ.
   trùng, `stopAll()` luôn đặt `null`, nên tiêu điểm không bao giờ trỏ vào nguồn
   đã gỡ.
 
+## Nhóm K — Workspace window (capture + panel chung một cửa sổ)
+
+### TC-K1 — Bật workspace rồi mở panel
+- Thao tác: mở popup, bật `Workspace window`, rồi bấm `Notes`.
+- Kỳ vọng: một cửa sổ document PiP mở ra, bên trái là khung capture với dòng
+  `Nothing floating yet.`, bên phải là panel Notes; popup đóng; mở lại popup
+  thấy dòng trạng thái `Workspace on` hoặc `Workspace open`.
+- Neo: `background/service-worker.js` — `set-unified-window`,
+  `ensureUnifiedWindow()` với 0 nguồn bỏ qua chờ stream;
+  `unified/capture.js` — khung trống khi chưa có stream.
+
+### TC-K2 — Float tab khi workspace đang mở
+- Thao tác: đang mở workspace ở TC-K1 (cùng tab), mở popup bấm `Whole tab`.
+- Kỳ vọng: không có cửa sổ PiP video nào mới; nửa trái của workspace hiện nội
+  dung tab và cập nhật theo tab; popup liệt kê một nguồn kèm nút `Go to tab`.
+- Neo: `background/service-worker.js` — `createSource()` truyền
+  `deferPip: true`, `unified-publish`; `offscreen/offscreen.js` —
+  `publishCaptureStream()` qua `BroadcastChannel`.
+
+### TC-K3 — Đổi panel trong workspace
+- Thao tác: đang mở workspace với Notes, mở popup bấm `Focus`.
+- Kỳ vọng: cùng một cửa sổ, nửa phải chuyển sang panel Focus, nửa trái giữ
+  nguyên capture; chỉ có một cửa sổ PiP duy nhất.
+- Neo: `background/service-worker.js` — `switchUnifiedPanel()` gửi
+  `unified-switch-panel` tới controller trong tab host.
+
+### TC-K4 — Đóng workspace bằng nút X
+- Thao tác: đóng cửa sổ workspace bằng nút `X`, rồi mở lại popup.
+- Kỳ vọng: popup trở về trạng thái rảnh (danh sách rỗng, `Stop PiP` ẩn), chấm
+  chia sẻ tab tắt.
+- Neo: controller trong `openUnifiedWindow` gửi `unified-closed`;
+  `background/service-worker.js` — nhánh `unified-closed` gọi
+  `stopAllSources()`, giống semantics của `pip-exited` (TC-B3/TC-I3).
+
+### TC-K5 — Tắt workspace giữa chừng
+- Thao tác: đang float trong workspace, mở popup tắt `Workspace window`.
+- Kỳ vọng: cửa sổ workspace đóng, capture chuyển sang cửa sổ PiP video cổ
+  điển mà không mất nguồn; popup vẫn liệt kê đủ nguồn.
+- Neo: `set-unified-window` (off) gọi `closeUnifiedWindow()` rồi
+  `unified-enter-video`; `offscreen/offscreen.js` — `exitVideoPip()` /
+  `enterVideoPip()`.
+
+### TC-K6 — Stream từ chối thì tách cửa sổ
+- Thao tác: nếu nửa capture không bao giờ hiện hình (sau ~6 giây), quan sát.
+- Kỳ vọng: capture vẫn sống trong cửa sổ PiP video riêng, panel giữ cửa sổ
+  workspace; popup báo `Workspace open · … separate capture (stream refused).`
+- Neo: `waitForCaptureReady()` hết hạn, `streamLive` false, latch
+  `streamTried` để lần sau không chờ lại vô ích.
+
 ## 12. Lệnh kiểm tra bằng console
 
 Console service worker (`chrome://extensions` → service worker):
@@ -716,3 +765,9 @@ không đóng cửa sổ PiP gốc của trang (TC-D4).
 | TC-J2 |  |  |
 | TC-J3 |  |  |
 | TC-J4 |  |  |
+| TC-K1 |  |  |
+| TC-K2 |  |  |
+| TC-K3 |  |  |
+| TC-K4 |  |  |
+| TC-K5 |  |  |
+| TC-K6 |  |  |
