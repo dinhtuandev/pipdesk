@@ -370,6 +370,12 @@ body {
   opacity: 0.5;
 }
 
+/* `.group` sets `display`, which would otherwise beat the `hidden` attribute
+   and leave every tab's content on screen at once. */
+.view[hidden] {
+  display: none;
+}
+
 .tabs {
   display: flex;
   gap: 4px;

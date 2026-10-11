@@ -386,6 +386,8 @@ function setTab(name) {
     button.setAttribute("aria-selected", String(active));
     document.getElementById(viewId).hidden = !active;
   }
+  // Swapping views should start at the top of the new one, never mid-scroll.
+  window.scrollTo(0, 0);
 }
 
 function bindTabs() {
