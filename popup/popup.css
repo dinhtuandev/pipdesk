@@ -416,6 +416,12 @@ body {
   padding: 4px 6px;
 }
 
+/* A class rule that sets `display` beats the `hidden` attribute, which would
+   leave rows like Stop and Stop all visible with nothing floating. */
+[hidden] {
+  display: none !important;
+}
+
 /* `.group` sets `display`, which would otherwise beat the `hidden` attribute
    and leave every tab's content on screen at once. */
 .view[hidden] {
@@ -476,4 +482,22 @@ body {
 .about dd {
   margin: 0;
   color: var(--text);
+}
+
+.tour {
+  width: 100%;
+  margin-top: var(--sp-3);
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.tour:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
 }

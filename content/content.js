@@ -29,6 +29,22 @@ if (!window.__pipDeskContentScript) {
   let rect = null;
   let hoverRect = null;
 
+  /**
+   * This tab can outlive the extension (reload, update, disable). From then on
+   * chrome.runtime.sendMessage throws "Extension context invalidated"
+   * synchronously, before there is a promise for `.catch()` to hold, and the
+   * throw would escape the pointer and key handlers.
+   */
+  function tellWorker(message) {
+    try {
+      chrome.runtime.sendMessage(message).catch(() => {
+        /* the worker is not listening right now */
+      });
+    } catch (error) {
+      /* context gone: nothing is left to tell */
+    }
+  }
+
   /* --- selection overlay -------------------------------------------- */
 
   function button(label, primary) {
@@ -255,13 +271,11 @@ if (!window.__pipDeskContentScript) {
 
   function sendSelection() {
     if (!rect || rect.width < MIN_SIDE || rect.height < MIN_SIDE) return;
-    chrome.runtime
-      .sendMessage({
-        type: "region-selected",
-        rect,
-        viewport: { width: window.innerWidth, height: window.innerHeight },
-      })
-      .catch(() => {});
+    tellWorker({
+      type: "region-selected",
+      rect,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    });
     teardown("commit");
   }
 
@@ -346,7 +360,7 @@ if (!window.__pipDeskContentScript) {
   function teardown(reason) {
     clearSelection();
     if (reason === "commit") return;
-    chrome.runtime.sendMessage({ type: "selection-cancelled" }).catch(() => {});
+    tellWorker({ type: "selection-cancelled" });
   }
 
   function onViewportChange() {
@@ -434,7 +448,7 @@ if (!window.__pipDeskContentScript) {
     "leavepictureinpicture",
     (event) => {
       if (!(event.target instanceof HTMLVideoElement)) return;
-      chrome.runtime.sendMessage({ type: "pip-exited" }).catch(() => {});
+      tellWorker({ type: "pip-exited" });
     },
     true,
   );

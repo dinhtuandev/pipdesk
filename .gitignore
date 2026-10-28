@@ -19,3 +19,6 @@ dist/
 *.zip
 *.crx
 *.pem
+
+# Store assets: the composed PNGs are kept, the raw captures are regenerable
+store/raw/

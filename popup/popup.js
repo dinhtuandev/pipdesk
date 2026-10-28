@@ -14,6 +14,7 @@ const els = {
   unified: document.getElementById("unified"),
   unifiedState: document.getElementById("unified-state"),
   version: document.getElementById("version"),
+  openTour: document.getElementById("open-tour"),
   sync: document.getElementById("sync"),
   floatSite: document.getElementById("float-site"),
   start: document.getElementById("cap-start"),
@@ -415,6 +416,11 @@ function bind() {
       run(button, { type: "open-panel", page }, { close: true }),
     );
   }
+
+  els.openTour?.addEventListener("click", () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL("welcome/welcome.html") });
+    window.close();
+  });
 }
 
 /* --- cross-device sync ---------------------------------------------- */

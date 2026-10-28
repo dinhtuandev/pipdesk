@@ -27,6 +27,18 @@
   const button = (text, cls, onclick) =>
     el("button", { type: "button", class: cls, text, onclick });
 
+  /* Synced data and older records can miss fields; keep the panel usable. */
+  function normalise(value) {
+    if (!Array.isArray(value)) return [];
+    return value
+      .filter((note) => note && typeof note === "object")
+      .map((note) => ({
+        id: typeof note.id === "number" ? note.id : Panel.newId(),
+        text: String(note.text ?? ""),
+        updatedAt: Number(note.updatedAt) || Date.now(),
+      }));
+  }
+
   const byNewest = () => [...notes].sort((a, b) => b.updatedAt - a.updatedAt);
 
   function preview(text) {
@@ -171,7 +183,7 @@
   }
 
   function applyExternal(value) {
-    notes = Array.isArray(value) ? value : [];
+    notes = normalise(value);
     renderCount();
     if (editingId === null) renderList();
   }

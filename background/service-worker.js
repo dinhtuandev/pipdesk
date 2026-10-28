@@ -611,9 +611,13 @@ async function openUnifiedWindow({ captureUrl, panelUrl, panel, width, height })
     if (state) state.alive = false;
     if (ours) return;
     try {
-      chrome.runtime.sendMessage({ type: "unified-closed" });
+      chrome.runtime
+        .sendMessage({ type: "unified-closed" })
+        .catch(() => {
+          /* worker is gone */
+        });
     } catch (error) {
-      /* worker is gone */
+      /* extension context is gone */
     }
   });
 
@@ -882,6 +886,9 @@ async function handle(message, sender) {
 
     case "pip-exited":
       selecting = false;
+      // The window is gone, so a pending auto-stop deadline has nothing left
+      // to close; leaving it armed would fire a stale alarm later.
+      await clearPipAutoStop();
       await stopTabStream();
       await broadcast();
       return { ok: true };
@@ -889,6 +896,7 @@ async function handle(message, sender) {
     case "offscreen-error":
       console.error("[PiPDesk] offscreen:", message.message);
       lastError = message.message;
+      await clearPipAutoStop();
       await stopTabStream();
       await broadcast();
       chrome.runtime
@@ -920,10 +928,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 /* --- lifecycle ------------------------------------------------------ */
 
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   const { settings } = await chrome.storage.local.get("settings");
   if (!settings) {
     await chrome.storage.local.set({ settings: { syncEnabled: false } });
+  }
+  // A fresh install lands on the tour once: it is where the shared canvas and
+  // the shortcuts are shown. Updates leave the user's tabs alone.
+  if (details?.reason === "install") {
+    chrome.tabs
+      .create({ url: chrome.runtime.getURL("welcome/welcome.html") })
+      .catch(() => {});
   }
 });
 
@@ -1047,31 +1062,71 @@ chrome.runtime.onStartup.addListener(syncFloatScripts);
 
 const MENU_ROOT = "pipdesk-menu";
 
+const MENU_ITEMS = [
+  ["pipdesk-float-tab", "Float this tab"],
+  ["pipdesk-float-region", "Float a region"],
+  ["pipdesk-stop", "Stop PiP"],
+];
+
+/**
+ * A second create() with an id the menu already holds fails with an unchecked
+ * runtime.lastError, so the callback reads and reports it instead of leaving
+ * Chrome to log it. Duplicate ids are expected when a build overlaps another
+ * one and are not worth a warning.
+ */
+function createMenuItem(properties) {
+  return new Promise((resolve) => {
+    chrome.contextMenus.create(properties, () => {
+      const error = chrome.runtime.lastError;
+      if (error && !/duplicate id/i.test(error.message || "")) {
+        console.warn("[PiPDesk] context menu:", error.message);
+      }
+      resolve();
+    });
+  });
+}
+
 /**
  * The Chrome menu gets the actions that do not need the page's own click:
  * "float this video" only exists on the YouTube control, because a page-side
  * picture-in-picture request would arrive here without user activation.
+ *
+ * Builds are serialised. onInstalled and onStartup both fire on an update or a
+ * browser start, and two interleaved removeAll/create sequences used to hand
+ * the second one a menu the first had just filled — the duplicate-id errors.
  */
+let menuBuild = Promise.resolve();
+
 function buildContextMenu() {
-  chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({
-      id: MENU_ROOT,
-      title: "PiPDesk",
-      contexts: ["page", "frame", "video"],
-    });
-    for (const [id, title] of [
-      ["pipdesk-float-tab", "Float this tab"],
-      ["pipdesk-float-region", "Float a region"],
-      ["pipdesk-stop", "Stop PiP"],
-    ]) {
-      chrome.contextMenus.create({
-        id,
-        parentId: MENU_ROOT,
-        title,
+  menuBuild = menuBuild
+    .then(
+      () =>
+        new Promise((resolve) => {
+          chrome.contextMenus.removeAll(() => {
+            void chrome.runtime.lastError;
+            resolve();
+          });
+        }),
+    )
+    .then(async () => {
+      await createMenuItem({
+        id: MENU_ROOT,
+        title: "PiPDesk",
         contexts: ["page", "frame", "video"],
       });
-    }
-  });
+      for (const [id, title] of MENU_ITEMS) {
+        await createMenuItem({
+          id,
+          parentId: MENU_ROOT,
+          title,
+          contexts: ["page", "frame", "video"],
+        });
+      }
+    })
+    .catch((error) => {
+      console.warn("[PiPDesk] context menu build failed", error);
+    });
+  return menuBuild;
 }
 
 chrome.runtime.onInstalled.addListener(buildContextMenu);

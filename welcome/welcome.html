@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PiPDesk — quick tour</title>
+    <link rel="stylesheet" href="../shared/tokens.css" />
+    <link rel="stylesheet" href="welcome.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <img class="hero__icon" src="../icons/icon48.png" alt="" width="48" height="48" />
+      <div class="hero__text">
+        <h1>Everything you float shares one window</h1>
+        <p>
+          Move the controls below: the preview uses the same layout maths as the
+          real compositor, so what you arrange here is what PiPDesk draws.
+        </p>
+      </div>
+    </header>
+
+    <main>
+      <section class="card" aria-labelledby="split-title">
+        <div class="card__head">
+          <h2 id="split-title">One canvas, up to four sources</h2>
+          <div class="segs">
+            <div class="seg" id="count-picker" role="group" aria-label="Sources to float"></div>
+            <button class="seg seg__single" id="focus-toggle" type="button" aria-pressed="false">
+              Show one alone
+            </button>
+            <button class="seg seg__single" id="workspace-toggle" type="button" aria-pressed="false">
+              Workspace window
+            </button>
+          </div>
+        </div>
+
+        <div class="stage">
+          <div class="frame" id="frame">
+            <div class="frame__feed">
+              <div class="frame__feed-inner" id="feed"></div>
+            </div>
+            <aside class="frame__panel" aria-hidden="true">
+              <div class="mini__head">Notes</div>
+              <div class="mini__item"></div>
+              <div class="mini__item mini__item--short"></div>
+              <div class="mini__item"></div>
+              <div class="mini__foot"></div>
+            </aside>
+          </div>
+        </div>
+
+        <p class="readout">
+          <span id="layout-note"></span>
+          <span class="readout__meta" id="rate-note"></span>
+        </p>
+      </section>
+
+      <section class="card" aria-labelledby="region-title">
+        <div class="card__head">
+          <h2 id="region-title">Cut just the part you want</h2>
+          <span class="readout__meta">Drag on the page · arrows nudge · Ctrl + arrows resize</span>
+        </div>
+
+        <div class="region">
+          <div
+            class="mock"
+            id="mock"
+            role="application"
+            tabindex="0"
+            aria-label="Sample page; drag or use the arrow keys to pick a region"
+          >
+            <div class="mock__chrome"><i></i><i></i><i></i></div>
+            <div class="mock__side"><b></b><b></b><b></b><b></b><b></b></div>
+            <div class="mock__main">
+              <div class="mock__title"></div>
+              <div class="mock__sub"></div>
+              <div class="mock__cards"><b></b><b></b><b></b></div>
+              <div class="mock__graph"></div>
+              <div class="mock__line"></div>
+              <div class="mock__line mock__line--short"></div>
+            </div>
+            <div class="mock__select" id="mock-select" data-overlay></div>
+          </div>
+
+          <div class="crop">
+            <div class="crop__tile" id="crop-tile"></div>
+            <p class="crop__meta" id="crop-meta"></p>
+            <p class="crop__hint">
+              Everything outside the box stays out of the floating window.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="steps" aria-labelledby="steps-title">
+        <h2 id="steps-title">Three clicks to float</h2>
+        <ol>
+          <li class="step">
+            <span class="step__num" aria-hidden="true">1</span>
+            <div class="step__text">
+              <h3>Pin the sites you float</h3>
+              <p>Toolbar icon → <b>Float button on this site</b>. A small badge then sits over that page's video.</p>
+            </div>
+            <button class="btn" id="open-popup" type="button">Open the popup</button>
+          </li>
+          <li class="step">
+            <span class="step__num" aria-hidden="true">2</span>
+            <div class="step__text">
+              <h3>Pick what floats</h3>
+              <p>
+                <kbd>Alt</kbd><kbd>Shift</kbd><kbd>P</kbd> tab ·
+                <kbd>Alt</kbd><kbd>Shift</kbd><kbd>R</kbd> region ·
+                <kbd>Alt</kbd><kbd>Shift</kbd><kbd>X</kbd> stop.
+                Video mode lives in the popup: the page's own PiP needs your click.
+              </p>
+            </div>
+          </li>
+          <li class="step">
+            <span class="step__num" aria-hidden="true">3</span>
+            <div class="step__text">
+              <h3>Arrange, then keep working</h3>
+              <p>Each floating source gets a row: <b>Show alone</b>, <b>Back to grid</b>, <b>Stop</b>. Your notes, to-dos and timer can join the same window.</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <p>
+        No network calls, no analytics. Captured pixels are decoded and drawn
+        inside the extension and never leave this device.
+      </p>
+      <span class="foot__ver">PiPDesk <span id="version"></span></span>
+    </footer>
+
+    <p class="status" id="status" role="status"></p>
+
+    <script src="../offscreen/layout.js"></script>
+    <script src="welcome.js"></script>
+  </body>
+</html>

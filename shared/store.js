@@ -8,13 +8,48 @@
  * Loaded by the panels and by the popup; it only touches chrome.storage. */
 
 const Store = (() => {
-  const SYNC_ITEM_LIMIT = 8000; // keep a little headroom under the 8192 quota
+  /* chrome.storage.sync rejects an item whose JSON form (value plus key) is
+     over 8192 bytes. The budget below leaves room for the key, the quotes and
+     JSON escaping, and is measured in UTF-8 bytes rather than characters: a
+     note in Vietnamese or with emoji costs more than one byte per character. */
+  const SYNC_ITEM_LIMIT = 8000;
+  const KEY_HEADROOM = 16;
   const KEYS = {
     NOTES: "notes",
     TODOS: "todos",
     TIMER: "timer",
     SETTINGS: "settings",
   };
+
+  const encoder = new TextEncoder();
+  const byteLength = (text) => encoder.encode(text).length;
+
+  /** JSON adds two quotes and escapes some characters; measure that growth. */
+  const escapedLength = (char) => byteLength(JSON.stringify(char)) - 2;
+
+  /**
+   * Split a serialized record so every chunk fits one sync item. Chunks break
+   * on character boundaries, never inside a surrogate pair.
+   */
+  function splitForSync(serialized, key) {
+    const budget = SYNC_ITEM_LIMIT - byteLength(key) - KEY_HEADROOM;
+    const chunks = [];
+    let current = "";
+    let size = 0;
+
+    for (const char of serialized) {
+      const cost = escapedLength(char);
+      if (size + cost > budget && current) {
+        chunks.push(current);
+        current = "";
+        size = 0;
+      }
+      current += char;
+      size += cost;
+    }
+    if (current) chunks.push(current);
+    return chunks;
+  }
 
   const partKey = (key, index) => `${key}__part_${index}`;
   const partsKey = (key) => `${key}__parts`;
@@ -58,18 +93,23 @@ const Store = (() => {
   async function writeSync(key, value) {
     const serialized = JSON.stringify(value);
     await clearSyncParts(key);
-    if (serialized.length <= SYNC_ITEM_LIMIT) {
+    if (
+      byteLength(serialized) + byteLength(key) + 2 <=
+      SYNC_ITEM_LIMIT
+    ) {
       await chrome.storage.sync.set({ [key]: value });
       return;
     }
-    const chunks = [];
-    for (let i = 0; i < serialized.length; i += SYNC_ITEM_LIMIT) {
-      chunks.push(serialized.slice(i, i + SYNC_ITEM_LIMIT));
-    }
-    await chrome.storage.sync.set({ [partsKey(key)]: chunks.length });
-    for (let i = 0; i < chunks.length; i += 1) {
-      await chrome.storage.sync.set({ [partKey(key, i)]: chunks[i] });
-    }
+    const chunks = splitForSync(serialized, key);
+    // A chunked value must not leave the previous small value behind: readers
+    // check the direct key first, so a stale one would win.
+    await chrome.storage.sync.remove(key);
+    const batch = { [partsKey(key)]: chunks.length };
+    chunks.forEach((chunk, i) => {
+      batch[partKey(key, i)] = chunk;
+    });
+    // One write keeps other contexts from reading a half-written value.
+    await chrome.storage.sync.set(batch);
   }
 
   async function readSync(key) {
@@ -133,7 +173,13 @@ const Store = (() => {
     return () => subscribers.delete(entry);
   }
 
-  chrome.storage.onChanged.addListener(async (changes, area) => {
+  // Absent when the file is required by `node --test` rather than a page.
+  const watchStorage =
+    typeof chrome !== "undefined" && chrome.storage?.onChanged
+      ? chrome.storage.onChanged
+      : null;
+
+  watchStorage?.addListener(async (changes, area) => {
     if (area === "local") {
       for (const entry of subscribers) {
         if (!(entry.key in changes)) continue;
@@ -147,6 +193,9 @@ const Store = (() => {
     }
 
     if (area !== "sync") return;
+    // Turning sync off leaves the mirrored copy in place, but it must stop
+    // overwriting local data the moment the user opts out.
+    if (!(await syncEnabled())) return;
 
     const touched = new Set();
     for (const storedKey of Object.keys(changes)) {
@@ -176,5 +225,11 @@ const Store = (() => {
     setSettings,
     syncEnabled,
     dropSync,
+    splitForSync,
   };
 })();
+
+// The panels load this as a plain script; `node --test` requires it.
+if (typeof module === "object" && module.exports) {
+  module.exports = { Store, splitForSync: Store.splitForSync };
+}

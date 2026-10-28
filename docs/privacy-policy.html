@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PiPDesk privacy policy</title>
+    <meta
+      name="description"
+      content="What the PiPDesk Chrome extension handles, what it never does, and how to reach its author."
+    />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #16181d;
+        --dim: #4b5364;
+        --bg: #ffffff;
+        --line: #e3e6ec;
+        --accent: #5b3df0;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --fg: #e9edf5;
+          --dim: #9aa5b8;
+          --bg: #0d1017;
+          --line: #2a3140;
+          --accent: #b8a6ff;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 48px 20px 72px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+      }
+      main { max-width: 720px; margin: 0 auto; }
+      h1 { margin: 0 0 4px; font-size: 30px; letter-spacing: -0.02em; }
+      .updated { margin: 0 0 32px; color: var(--dim); font-size: 14px; }
+      h2 {
+        margin: 34px 0 10px;
+        font-size: 18px;
+        letter-spacing: -0.01em;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 6px;
+      }
+      p, li { margin: 0 0 12px; }
+      ul { padding-left: 22px; }
+      a { color: var(--accent); }
+      strong { font-weight: 650; }
+      code {
+        padding: 1px 5px;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        font-size: 0.92em;
+      }
+      footer {
+        margin-top: 40px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        color: var(--dim);
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>PiPDesk privacy policy</h1>
+      <p class="updated">Last updated: 2026-10-28</p>
+
+      <p>
+        PiPDesk is a Chrome extension that shows content you choose in a
+        floating picture-in-picture window. This policy explains what the
+        extension handles and what it never does.
+      </p>
+
+      <h2>What PiPDesk handles</h2>
+      <ul>
+        <li>
+          <strong>Captured pixels.</strong> When you float a tab or a region,
+          Chrome's <code>tabCapture</code> API hands the extension a live video
+          stream of that tab. The stream is decoded and drawn onto a canvas
+          inside a hidden offscreen document in your browser. It is never
+          recorded to disk, never sent over a network, and is released when you
+          stop the capture or close the floating window.
+        </li>
+        <li>
+          <strong>Page interaction.</strong> When you start the region selector
+          or the video picture-in-picture action, the extension injects a small
+          script into the tab you are on. It draws a selection overlay, or asks
+          the page's video element to enter picture-in-picture. It reads no page
+          content beyond what that action needs.
+        </li>
+        <li>
+          <strong>Your own data.</strong> Notes, to-dos, focus-timer history and
+          settings are stored with <code>chrome.storage.local</code> on your
+          device. If you turn on "Sync across devices", the notes, to-dos and
+          timer data are mirrored to <code>chrome.storage.sync</code>, which
+          means it is stored in your own Chrome profile by Google under
+          Google's terms.
+        </li>
+        <li>
+          <strong>The floating button setting.</strong> If you enable the
+          floating badge for a site, the extension stores that site's origin and
+          asks Chrome for permission to run on that site so the badge can appear
+          there.
+        </li>
+      </ul>
+
+      <h2>What PiPDesk never does</h2>
+      <ul>
+        <li>No account and no sign-in.</li>
+        <li>No analytics, telemetry, crash reporting or advertising.</li>
+        <li>
+          No network requests of any kind. The extension contains no remote
+          code and loads nothing from the internet.
+        </li>
+        <li>No selling, sharing or transferring of user data to third parties.</li>
+        <li>
+          No reading of browsing history, passwords, form fields or page text
+          for any purpose other than the action you started.
+        </li>
+      </ul>
+
+      <h2>Retention and deletion</h2>
+      <p>
+        Captured video exists only in memory while a capture is running.
+        Notes, to-dos, timer history and settings stay in
+        <code>chrome.storage</code> until you clear them in the extension or
+        uninstall PiPDesk, which removes its storage. If sync is enabled,
+        delete the data in the extension and it is removed from
+        <code>chrome.storage.sync</code> as well; you can also clear synced
+        extension data from your Google account's Chrome sync settings.
+      </p>
+
+      <h2>Permissions</h2>
+      <p>
+        Each permission exists for one visible feature:
+        <code>activeTab</code> and <code>tabCapture</code> to float the tab you
+        chose, <code>offscreen</code> to run the compositor,
+        <code>scripting</code> for the region selector and video action,
+        <code>storage</code> for your notes and settings, <code>alarms</code>
+        and <code>notifications</code> for the focus timer and auto-close,
+        <code>contextMenus</code> for Chrome's right-click menu, and optional
+        host access only for sites where you explicitly enable the floating
+        badge. The YouTube content script places the Quick PiP control in the
+        player bar.
+      </p>
+
+      <h2>Children</h2>
+      <p>
+        PiPDesk is a general-purpose productivity tool and is not directed at
+        children.
+      </p>
+
+      <h2>Changes</h2>
+      <p>
+        If this policy changes, the updated version will be published at this
+        URL and the "Last updated" date above will change.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions about this policy:
+        <a href="mailto:trandinhtuan0219@gmail.com">trandinhtuan0219@gmail.com</a>.
+        You can also reach the author at
+        <a href="https://github.com/dinhtuandev">github.com/dinhtuandev</a>.
+      </p>
+
+      <footer>
+        PiPDesk — picture-in-picture workspace. This page is the source of truth
+        for the extension's listing on the Chrome Web Store.
+      </footer>
+    </main>
+  </body>
+</html>

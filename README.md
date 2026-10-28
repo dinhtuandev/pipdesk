@@ -27,7 +27,9 @@ profile when you turn on sync).
 1. Open `chrome://extensions`.
 2. Turn on **Developer mode**.
 3. Choose **Load unpacked** and select this folder.
-4. Pin the extension, then click its icon on any page.
+4. Pin the extension, then click its icon on any page. A fresh install opens
+   the interactive tour (`welcome/`), which also lives behind the popup's
+   **Help** tab.
 
 Requires Chrome 116 or newer (document Picture-in-Picture). If a page refuses a
 document PiP window, the panel falls back to a small standalone window.
@@ -43,14 +45,20 @@ document PiP window, the panel falls back to a small standalone window.
 ## How it is put together
 
 ```text
-manifest.json              MV3 manifest — no host permissions, no content scripts
+manifest.json              MV3 manifest — optional host access, one declared content script
 background/service-worker.js  state, capture orchestration, offscreen lifecycle, alarms
-offscreen/                 tab capture, region cropping, PiP promotion
-content/content.js         region selection overlay + native video PiP
+offscreen/                 tab capture, region cropping, canvas compositing, layout maths
+content/content.js         region selection overlay + native video PiP (injected on demand)
+content/youtube.js         mounts the Quick PiP control in YouTube's player bar
 popup/                     the toolbar popup
 panels/                    notes, todos, timer (rendered inside the PiP window)
+unified/                   capture iframe for the workspace window
+welcome/                   interactive tour, opened on install
 shared/                    design tokens, panel styles, storage, panel helpers
 tools/make-icons.py        regenerates icons/*.png from code
+tools/store-shots.mjs      captures the real UI for store screenshots
+tools/store-assets.py      composes the 1280 × 800 store images + promo tile
+tools/package.py           validates the manifest and builds the upload zip
 ```
 
 Design notes worth knowing before you change things:
@@ -62,15 +70,23 @@ Design notes worth knowing before you change things:
   UTC — otherwise daily stats drift for anyone outside UTC.
 - **Escaping.** All user text is passed through `Panel.escapeHtml` before it
   reaches `innerHTML`.
-- **Narrow web surface.** Only the three panel HTML files are web-accessible,
-  with `use_dynamic_url` enabled. The content script is injected on demand
-  instead of being declared for every page.
+- **Narrow web surface.** Only the panel pages and the workspace capture frame
+  are web-accessible, with `use_dynamic_url` enabled. The region/video content
+  script is injected on demand; the only declared content script is the YouTube
+  control, which needs YouTube's player page.
+- **One picture-in-picture window.** Chrome allows a document only one document
+  PiP window, so every source shares one 1280 × 720 canvas: a lone (or focused)
+  source fills it, two tiles sit centred, three or four fill a 2 × 2 grid, and
+  three or more draw at 15 fps instead of 30 (`offscreen/layout.js`).
 
 ## Development
 
 ```bash
+node --test                                 # layout maths in tests/
 node --check background/service-worker.js   # syntax check a source file
 python tools/make-icons.py                  # regenerate the icon set
+node tools/store-shots.mjs && python tools/store-assets.py  # store screenshots
+python tools/package.py                     # dist/pipdesk-<version>.zip
 ```
 
 After editing, press the reload button for the extension on
@@ -81,7 +97,13 @@ After editing, press the reload button for the extension on
 No network requests, no analytics, no accounts. Captured pixels stay in an
 offscreen document in your browser and are never uploaded. "Sync across
 devices" uses Google's own `chrome.storage.sync`, which means the data you
-choose to sync is stored in your Chrome profile.
+choose to sync is stored in your Chrome profile. The full text is in
+[docs/privacy-policy.md](docs/privacy-policy.md).
+
+## Publishing
+
+Store listing copy, permission justifications, reviewer instructions and the
+submission order are in [docs/CHROME-WEB-STORE.md](docs/CHROME-WEB-STORE.md).
 
 ## License
 

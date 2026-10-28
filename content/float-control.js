@@ -112,9 +112,13 @@
   }
 
   function send(message) {
-    chrome.runtime.sendMessage(message).catch(() => {
-      /* the extension was reloaded while this page stayed open */
-    });
+    try {
+      chrome.runtime.sendMessage(message).catch(() => {
+        /* the extension was reloaded while this page stayed open */
+      });
+    } catch (error) {
+      /* context gone: sendMessage throws before it can return a promise */
+    }
   }
 
   let toastTimer = null;
