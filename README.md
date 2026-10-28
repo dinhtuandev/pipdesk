@@ -17,7 +17,7 @@ profile when you turn on sync).
 | Selected region PiP | Drag a box over any part of a page; only that rectangle floats. |
 | Page video PiP | Hands a video element on the page to the browser's native picture-in-picture. |
 | Notes | Capture-and-go notes in their own floating panel. |
-| Notes export | Copy the whole list as Markdown, or save it as a dated `.md` file. |
+| Markdown export | Copy notes or todos as Markdown, or save them as a dated `.md` file; todo lines keep their `[x]` state and due date. |
 | Todos | Active/done split, due dates with overdue highlighting, inline editing. |
 | Focus timer | Pomodoro with work / short / long breaks, daily history and a system notification when a session ends. |
 | Workspace window | Capture and a panel side by side in one window; separate windows when the live stream refuses to attach. |

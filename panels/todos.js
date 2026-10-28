@@ -181,6 +181,7 @@
     const active = todos.filter((todo) => !todo.done).sort(byDueThenCreated);
     const done = todos.filter((todo) => todo.done).sort((a, b) => b.createdAt - a.createdAt);
     $("todos-meta").textContent = active.length === 1 ? "1 active" : `${active.length} active`;
+    $("todos-export").hidden = todos.length === 0;
     fill($("todos-active"), active, "No active todos.");
     fill($("todos-done"), done, "Nothing completed yet.");
     const field = editingId !== null ? $("todo-edit-text") : null;
@@ -233,6 +234,36 @@
     render();
   }
 
+  /* --- export -------------------------------------------------------- */
+
+  /** One Markdown task line: the checkbox carries the done state. */
+  const taskLine = (todo) =>
+    `- ${todo.done ? "[x]" : "[ ]"} ${todo.text.trim()}${
+      todo.due ? ` — due ${todo.due}` : ""
+    }`;
+
+  /** Both lists as Markdown, in the order the panel shows them. */
+  function toMarkdown() {
+    const active = todos.filter((todo) => !todo.done).sort(byDueThenCreated);
+    const done = todos
+      .filter((todo) => todo.done)
+      .sort((a, b) => b.createdAt - a.createdAt);
+    const lines = ["# PiPDesk todos", ""];
+    if (active.length) lines.push("## Active", "", ...active.map(taskLine), "");
+    if (done.length) lines.push("## Done", "", ...done.map(taskLine), "");
+    return `${lines.join("\n").trimEnd()}\n`;
+  }
+
+  const copyMarkdown = () =>
+    Panel.copyText(toMarkdown(), "Todos copied as Markdown");
+
+  const saveMarkdown = () =>
+    Panel.saveText(
+      `pipdesk-todos-${Panel.localDateKey()}.md`,
+      toMarkdown(),
+      "Todos saved as Markdown",
+    );
+
   function applyExternal(value) {
     todos = normalise(value);
     if (editingId === null) render();
@@ -242,6 +273,8 @@
     todos = normalise(await Store.read(KEY, []));
     unsubscribe = Store.subscribe(KEY, applyExternal);
     $("todo-add").addEventListener("click", addTodo);
+    $("todos-copy").addEventListener("click", copyMarkdown);
+    $("todos-save").addEventListener("click", saveMarkdown);
     $("todo-input").addEventListener("keydown", (event) => {
       if (event.key === "Enter") addTodo();
     });

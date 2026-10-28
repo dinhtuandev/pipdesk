@@ -87,6 +87,32 @@ const Panel = (() => {
     setTimeout(() => node.remove(), 1800);
   }
 
+  /** Put text on the clipboard, reporting the outcome through a toast. */
+  async function copyText(text, okMessage = "Copied") {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast(okMessage);
+    } catch {
+      toast("Clipboard is not available here");
+    }
+  }
+
+  /** Offer text as a download; the anchor never joins the layout. */
+  function saveText(filename, text, okMessage = "Saved") {
+    const blob = new Blob([text], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    // The download starts from the blob URL; keep it alive until it has.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast(okMessage);
+  }
+
   /** Render the bottom navigation and wire page switching. */
   function mountNav(activeId, containerId = "panel-nav") {
     const container = document.getElementById(containerId);
@@ -127,6 +153,8 @@ const Panel = (() => {
     timeAgo,
     svg,
     toast,
+    copyText,
+    saveText,
     mountNav,
   };
 })();

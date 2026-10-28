@@ -373,6 +373,17 @@ Tổng hợp vào bảng ở mục 14.
   `No active todos.` và `Nothing completed yet.`
 - Neo: `panels/todos.js` — `addTodo()`, `toggleTodo()`, `removeTodo()`, `render()`.
 
+### TC-E4b — Todos: xuất Markdown kèm trạng thái đã xong
+- Thao tác: có một việc đang làm, một việc có hạn và một việc đã tick xong, bấm
+  `Copy as Markdown` rồi dán vào trình soạn thảo; sau đó bấm `Save .md`.
+- Kỳ vọng: toast `Todos copied as Markdown`, clipboard có `# PiPDesk todos`,
+  mục `## Active` với dòng `- [ ] …` (việc có hạn kèm `— due YYYY-MM-DD`) và
+  mục `## Done` với dòng `- [x] …`; việc đã xong xếp mới nhất lên đầu; `Save .md`
+  tải về `pipdesk-todos-YYYY-MM-DD.md`; khi chưa có việc nào thì hàng hai nút ẩn.
+- Neo: `panels/todos.js` — `toMarkdown()`, `taskLine()`, `copyMarkdown()`,
+  `saveMarkdown()`; `render()` bật/tắt `#todos-export`; `shared/panel.js` —
+  `copyText()`, `saveText()`.
+
 ### TC-E5 — Todos: sửa nội dung và hạn
 - Thao tác: bấm vào một việc để mở trình sửa, đổi nội dung, đặt hạn là **hôm
   nay**, `Save`; mở lại và đặt hạn là **hôm qua**, `Save`; thử xoá trắng nội

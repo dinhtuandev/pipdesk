@@ -84,8 +84,8 @@ WHAT YOU CAN FLOAT
 • A video. On sites you enable, a small control floats the page's own video with
   the browser's native picture-in-picture.
 • Your own tools. Notes, a to-do list and a Pomodoro focus timer live in the
-  same floating window, and the notes copy out as Markdown when you need them
-  elsewhere.
+  same floating window, and notes and to-dos copy out as Markdown when you need
+  them elsewhere.
 
 UP TO FOUR SOURCES, ONE WINDOW
 Chrome only allows one document picture-in-picture window per tab, so PiPDesk

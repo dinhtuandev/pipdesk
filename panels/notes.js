@@ -73,31 +73,15 @@
     return `${lines.join("\n")}\n`;
   }
 
-  async function copyMarkdown() {
-    try {
-      await navigator.clipboard.writeText(toMarkdown());
-      Panel.toast("Notes copied as Markdown");
-    } catch {
-      Panel.toast("Clipboard is not available here");
-    }
-  }
+  const copyMarkdown = () =>
+    Panel.copyText(toMarkdown(), "Notes copied as Markdown");
 
-  function saveMarkdown() {
-    const url = URL.createObjectURL(
-      new Blob([toMarkdown()], { type: "text/markdown" }),
+  const saveMarkdown = () =>
+    Panel.saveText(
+      `pipdesk-notes-${Panel.localDateKey()}.md`,
+      toMarkdown(),
+      "Notes saved as Markdown",
     );
-    const link = el("a", {
-      href: url,
-      download: `pipdesk-notes-${Panel.localDateKey()}.md`,
-      hidden: "hidden",
-    });
-    document.body.append(link);
-    link.click();
-    link.remove();
-    // The download starts from the blob URL; keep it alive until it has.
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    Panel.toast("Notes saved as Markdown");
-  }
 
   function renderActions() {
     const host = $("notes-actions");
