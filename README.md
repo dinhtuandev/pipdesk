@@ -98,7 +98,8 @@ No network requests, no analytics, no accounts. Captured pixels stay in an
 offscreen document in your browser and are never uploaded. "Sync across
 devices" uses Google's own `chrome.storage.sync`, which means the data you
 choose to sync is stored in your Chrome profile. The full text is in
-[docs/privacy-policy.md](docs/privacy-policy.md).
+[docs/privacy-policy.md](docs/privacy-policy.md) and published at
+<https://dinhtuandev.github.io/pipdesk/privacy-policy.html>.
 
 ## Publishing
 

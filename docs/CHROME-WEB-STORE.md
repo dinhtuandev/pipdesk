@@ -14,7 +14,7 @@ listing, câu trả lời Privacy practices, hướng dẫn cho reviewer và th�
 | Tên ≤ 45 ký tự | ✅ `PiPDesk — Picture-in-Picture Workspace` (38) |
 | Summary ≤ 132 ký tự | ✅ (xem mục 3) |
 | Trang hướng dẫn tương tác | ✅ `welcome/` |
-| Chính sách quyền riêng tư | ⚠️ nội dung hoàn chỉnh (đã có email liên hệ) trong `docs/privacy-policy.md`, **cần host công khai** |
+| Chính sách quyền riêng tư | ✅ live tại `https://dinhtuandev.github.io/pipdesk/privacy-policy.html` (GitHub Pages từ `main` → `/docs`) |
 | Screenshot 1280 × 800 (1–5 ảnh) | ✅ `store/01…04-*.png` (4 ảnh, tái tạo bằng script) |
 | Promo tile 440 × 280 | ✅ `store/promo-440x280.png` (không bắt buộc) |
 | Tài khoản developer + 2FA | ❌ cần đăng ký (phí một lần 5 USD) |
@@ -166,20 +166,34 @@ window on top of other windows.
 no network requests. Captured frames are processed in memory in the offscreen
 document. Website content is processed only locally and never transmitted.
 
-**Privacy policy URL:** cần một URL công khai (xem mục 5).
+**Privacy policy URL:** `https://dinhtuandev.github.io/pipdesk/privacy-policy.html`
+(xem mục 5).
 
 ---
 
 ## 5. Chính sách quyền riêng tư
 
-Nội dung hoàn chỉnh trong `docs/privacy-policy.md` (mục Contact đã ghi email
-`trandinhtuan0219@gmail.com` và GitHub profile). Chrome Web Store yêu cầu **URL
-công khai**, không nhận file trong gói. Cách nhanh:
+**URL đã live và dán thẳng vào listing:**
 
-- GitHub Pages từ chính repo này (`/docs` → Settings → Pages), hoặc
-- một trang Notion/Google Docs ở chế độ public.
+```text
+https://dinhtuandev.github.io/pipdesk/privacy-policy.html
+```
 
-Sau khi có URL, dán vào Privacy practices và ghi lại URL đó trong README.
+Nó là GitHub Pages của chính repo này: nhánh `main`, thư mục `/docs`, bật sẵn
+qua `POST /repos/dinhtuandev/pipdesk/pages` (không còn phải cấu hình tay).
+
+Hai bản nội dung luôn phải khớp nhau:
+
+- `docs/privacy-policy.md` — bản dễ đọc khi review trong repo,
+- `docs/privacy-policy.html` — bản Pages thật sự phục vụ (Jekyll chỉ copy file
+  không có front matter, nên Markdown sẽ không tự render thành HTML).
+
+Sửa nội dung → cập nhật cả hai file → `git push` → Pages tự build lại trong
+khoảng một phút.
+
+Lưu ý: dữ liệu trong policy (email, URL) cũng phải khớp phần “Contact” của
+Chrome Web Store. Nếu đổi domain hoặc xoá repo thì URL này chết, khi đó bật
+lại Pages hoặc cập nhật listing ngay.
 
 Trong listing, mục **Contact email** điền `trandinhtuan0219@gmail.com`, mục
 **Support contact URL** điền `https://github.com/dinhtuandev` (không bắt buộc
