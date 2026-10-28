@@ -19,6 +19,13 @@
 
   const PLAYER = "#movie_player, .html5-video-player";
   const CONTROLS = ".ytp-right-controls";
+  /*
+   * Newer players split the bottom-right cluster into a left group (autoplay,
+   * subtitles, settings) and a right group (theater, fullscreen). Inserting at
+   * the start of the bar hung the control off its left edge, outside the row of
+   * buttons it belongs to, so we join the option group when it exists.
+   */
+  const CONTROLS_GROUP = ".ytp-right-controls-left";
 
   /*
    * YouTube rebuilds the player constantly (ads, captions, the progress bar),
@@ -46,7 +53,8 @@
       document.querySelector(`${PLAYER} ${CONTROLS}`) ||
       document.querySelector(CONTROLS);
     if (!bar || document.getElementById(shared.BUTTON_ID)) return;
-    bar.insertBefore(shared.buildControl(), bar.firstChild);
+    const slot = bar.querySelector(CONTROLS_GROUP) || bar;
+    slot.appendChild(shared.buildControl());
     shared.syncState();
     observePlayer();
   }

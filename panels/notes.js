@@ -49,6 +49,54 @@
   function renderCount() {
     $("notes-count").textContent =
       notes.length === 1 ? "1 note" : `${notes.length} notes`;
+    $("notes-export").hidden = notes.length === 0;
+  }
+
+  /* --- export -------------------------------------------------------- */
+
+  function stamp(timestamp) {
+    const date = new Date(timestamp);
+    const time = `${String(date.getHours()).padStart(2, "0")}:${String(
+      date.getMinutes(),
+    ).padStart(2, "0")}`;
+    return `${Panel.localDateKey(date)} ${time}`;
+  }
+
+  /** The whole list as Markdown, newest first: one bullet per note. */
+  function toMarkdown() {
+    const lines = ["# PiPDesk notes", ""];
+    for (const note of byNewest()) {
+      const [head, ...rest] = note.text.split("\n");
+      lines.push(`- ${stamp(note.updatedAt)} — ${head.trim()}`);
+      for (const line of rest) lines.push(`  ${line.trimEnd()}`);
+    }
+    return `${lines.join("\n")}\n`;
+  }
+
+  async function copyMarkdown() {
+    try {
+      await navigator.clipboard.writeText(toMarkdown());
+      Panel.toast("Notes copied as Markdown");
+    } catch {
+      Panel.toast("Clipboard is not available here");
+    }
+  }
+
+  function saveMarkdown() {
+    const url = URL.createObjectURL(
+      new Blob([toMarkdown()], { type: "text/markdown" }),
+    );
+    const link = el("a", {
+      href: url,
+      download: `pipdesk-notes-${Panel.localDateKey()}.md`,
+      hidden: "hidden",
+    });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    // The download starts from the blob URL; keep it alive until it has.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    Panel.toast("Notes saved as Markdown");
   }
 
   function renderActions() {
@@ -195,6 +243,8 @@
       query = event.target.value;
       renderList();
     });
+    $("notes-copy").addEventListener("click", copyMarkdown);
+    $("notes-save").addEventListener("click", saveMarkdown);
     $("notes-new").addEventListener("click", () => {
       editingId = null;
       confirmId = null;

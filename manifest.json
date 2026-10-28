@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PiPDesk \u2014 Picture-in-Picture Workspace",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Keep a tab, a page region, your notes, your to-dos or a focus timer floating on top of whatever you are working on.",
   "author": "dinhtuandev",
   "minimum_chrome_version": "116",

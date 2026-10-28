@@ -353,6 +353,16 @@ Tổng hợp vào bảng ở mục 14.
   `No notes yet. Tap New to write one.`
 - Neo: `panels/notes.js` — `saveNote()` và `renderList()`.
 
+### TC-E3b — Notes: xuất Markdown
+- Thao tác: có ít nhất một note, bấm `Copy as Markdown` rồi dán vào một trình soạn
+  thảo; sau đó bấm `Save .md`.
+- Kỳ vọng: toast `Notes copied as Markdown`, clipboard có tiêu đề `# PiPDesk notes`
+  và mỗi note một dòng `- YYYY-MM-DD HH:MM — nội dung`; `Save .md` tải về tệp
+  `pipdesk-notes-YYYY-MM-DD.md` với nội dung như trên và toast
+  `Notes saved as Markdown`; khi chưa có note nào thì hàng hai nút này ẩn.
+- Neo: `panels/notes.js` — `toMarkdown()`, `stamp()`, `copyMarkdown()`,
+  `saveMarkdown()`; `renderCount()` bật/tắt `#notes-export`.
+
 ### TC-E4 — Todos: thêm, chia nhóm, xoá
 - Thao tác: trong panel Todos, gõ vào ô `Add a todo` rồi nhấn `Enter`; thêm tiếp
   một việc bằng nút `Add`; thử thêm một việc trống; tick vào ô kiểm của một việc;
@@ -481,10 +491,14 @@ Tổng hợp vào bảng ở mục 14.
 ### TC-H1 — Nút xuất hiện trong thanh điều khiển
 - Thao tác: mở một trang xem video `https://www.youtube.com/watch?v=...`, đưa
   chuột xuống thanh điều khiển của trình phát.
-- Kỳ vọng: nút PiPDesk nằm trong nhóm điều khiển bên phải, cạnh các nút của
-  YouTube, và có tooltip `PiPDesk: float this video`.
-- Neo: `content/youtube.js` — `mount()` chèn `#pipdesk-quick-pip` vào đầu
-  `.ytp-right-controls`; `manifest.json` khai báo `content_scripts` cho
+- Kỳ vọng: nút PiPDesk nằm trong nhóm điều khiển bên phải, cùng hàng với các
+  nút của YouTube (không lơ lửng ở mép trái thanh), icon hiện rõ, và có tooltip
+  `PiPDesk: float this video`.
+- Neo: `content/youtube.js` — `mount()` thêm `#pipdesk-quick-pip` vào
+  `.ytp-right-controls-left` (nhóm nút tuỳ chọn) và lùi về `.ytp-right-controls`
+  khi trình phát cũ chưa tách nhóm; `float-control.js` — `buildIcon()` dựng SVG
+  bằng DOM vì YouTube bật Trusted Types, và `innerHTML` ở đó ném lỗi trước khi
+  nút kịp được chèn; `manifest.json` khai báo `content_scripts` cho
   `https://www.youtube.com/*`.
 
 ### TC-H2 — Bấm nút là float ngay, không cần mở popup
@@ -492,6 +506,13 @@ Tổng hợp vào bảng ở mục 14.
 - Kỳ vọng: cửa sổ PiP của trình phát mở ra; popup của extension không mở.
 - Neo: `content/youtube.js` — `startPip()` gọi `video.requestPictureInPicture()`
   ngay trong handler click, nên lời gọi giữ được user activation của trang.
+
+### TC-H2b — Bấm lại thì đưa video về trang
+- Thao tác: khi video đang nổi trong cửa sổ PiP, bấm lại nút PiPDesk.
+- Kỳ vọng: `exitPictureInPicture()` chạy, khung hình hiện lại trên trang;
+  tooltip đổi thành `PiPDesk: put the video back on the page`.
+- Neo: `content/float-control.js` — `startPip()` thoát sớm khi
+  `document.pictureInPictureElement` khác null; `syncState()` đổi tooltip.
 
 ### TC-H3 — Chuột phải trên nút mở nhóm hành động
 - Thao tác: bấm chuột phải vào nút PiPDesk.

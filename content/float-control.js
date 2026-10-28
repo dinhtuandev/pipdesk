@@ -24,13 +24,42 @@
   const TOAST_ID = "pipdesk-quick-toast";
   const BADGE_ID = "pipdesk-float-badge";
 
-  const ICON = [
-    '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">',
-    '<rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" ',
-    'stroke="currentColor" stroke-width="1.7"/>',
-    '<rect x="11.5" y="11" width="7" height="5" rx="1.1" fill="currentColor"/>',
-    "</svg>",
-  ].join("");
+  const SVG_NS = "http://www.w3.org/2000/svg";
+
+  /**
+   * The glyph, composed node by node. YouTube enforces Trusted Types, so
+   * assigning markup to innerHTML throws there before the button is ever
+   * inserted — the control vanished from the player bar for exactly that
+   * reason. Building the SVG with DOM calls works on every page.
+   */
+  function buildIcon() {
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", "24");
+    svg.setAttribute("height", "24");
+    svg.setAttribute("aria-hidden", "true");
+
+    const frame = document.createElementNS(SVG_NS, "rect");
+    frame.setAttribute("x", "3");
+    frame.setAttribute("y", "5");
+    frame.setAttribute("width", "18");
+    frame.setAttribute("height", "14");
+    frame.setAttribute("rx", "2.5");
+    frame.setAttribute("fill", "none");
+    frame.setAttribute("stroke", "currentColor");
+    frame.setAttribute("stroke-width", "1.7");
+
+    const inset = document.createElementNS(SVG_NS, "rect");
+    inset.setAttribute("x", "11.5");
+    inset.setAttribute("y", "11");
+    inset.setAttribute("width", "7");
+    inset.setAttribute("height", "5");
+    inset.setAttribute("rx", "1.1");
+    inset.setAttribute("fill", "currentColor");
+
+    svg.append(frame, inset);
+    return svg;
+  }
 
   const BUTTON_STYLE = [
     "display:inline-flex",
@@ -142,6 +171,22 @@
   /* --- the float itself ----------------------------------------------- */
 
   async function startPip() {
+    /*
+     * The control toggles. Once a video is floating, a player like YouTube's
+     * leaves a dimmed stand-in where the picture was, so the same button puts
+     * the video back on the page instead of asking for a window it already has.
+     */
+    if (document.pictureInPictureElement) {
+      try {
+        await document.exitPictureInPicture();
+      } catch (error) {
+        toast(
+          `PiPDesk could not close the floating video (${error?.name || "error"}).`,
+        );
+      }
+      return;
+    }
+
     const video = mainVideo();
     if (!video) {
       toast("No video to float on this page.");
@@ -241,6 +286,9 @@
       const node = document.getElementById(id);
       if (!node) continue;
       node.setAttribute("aria-pressed", String(floating));
+      node.title = floating
+        ? "PiPDesk: put the video back on the page"
+        : "PiPDesk: float this video";
       if (id === BUTTON_ID) node.style.opacity = floating ? "0.6" : "";
     }
   }
@@ -268,7 +316,7 @@
     button.setAttribute("aria-label", "PiPDesk: float this video");
     button.setAttribute("aria-pressed", "false");
     button.setAttribute("style", BUTTON_STYLE);
-    button.innerHTML = ICON;
+    button.append(buildIcon());
     return wireButton(button);
   }
 
@@ -319,7 +367,7 @@
     badge.title = "PiPDesk: float this video";
     badge.setAttribute("aria-label", "PiPDesk: float this video");
     badge.setAttribute("style", BADGE_STYLE);
-    badge.innerHTML = ICON;
+    badge.append(buildIcon());
     wireButton(badge);
     document.body.appendChild(badge);
 
